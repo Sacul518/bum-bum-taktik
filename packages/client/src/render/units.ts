@@ -1,62 +1,80 @@
 import * as THREE from 'three';
 import type { EntitySnapshot, UnitType } from '@bum-bum-taktik/shared';
+import { createUnitAtlasTexture, getUnitUvRect } from './loader.js';
 
-// Platzhalter-Formen pro Einheitentyp fuer den Pathfinding-Smoke-Test - noch
-// keine Sprites/Textur-Atlanten, das kommt mit der Asset-Pipeline in Phase 1
-// (docs/KONZEPT.md Abschnitt 7). Jede Form zeigt ihre Fahrtrichtung durch
-// Laenglichkeit/Spitze in +X an; applySnapshot() dreht die ganze Gruppe
-// passend zu snapshot.heading (0 = Blick in +X).
+// Einheiten als flache Draufsicht-Sprites aus dem Textur-Atlas (loader.ts,
+// docs/KONZEPT.md Abschnitte 4 und 7) statt der frueheren Platzhalter-
+// Geometrie. Alle Einheiten teilen sich ein Material (eine Atlas-Textur) und
+// pro Typ eine Geometrie mit fest eingerechneten Atlas-UVs - Vorstufe zum
+// spaeter geplanten Sprite-Instancing (ein Draw-Call pro Typ).
+// Jedes Sprite zeigt mit Fahrtrichtung nach +X; applySnapshot() dreht die
+// ganze Gruppe passend zu snapshot.heading (0 = Blick in +X).
 
-function createTankMesh(): THREE.Object3D {
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 0.6, 0.8),
-    new THREE.MeshBasicMaterial({ color: 0x2f8f3d }),
-  );
-  mesh.position.y = 0.3;
-  return mesh;
-}
-
-function createInfantryMesh(): THREE.Object3D {
-  const mesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.25, 0.25, 0.8, 12),
-    new THREE.MeshBasicMaterial({ color: 0x2266dd }),
-  );
-  mesh.position.y = 0.4;
-  return mesh;
-}
-
-function createBoatMesh(): THREE.Object3D {
-  const mesh = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.3, 0.8, 4, 8),
-    new THREE.MeshBasicMaterial({ color: 0x1a1a1a }),
-  );
-  // CapsuleGeometry steht standardmaessig aufrecht (laengs der Y-Achse) -
-  // um Z kippen, damit sie liegend auf dem Wasser erscheint.
-  mesh.rotation.z = Math.PI / 2;
-  mesh.position.y = 0.3;
-  return mesh;
-}
-
-function createPlaneMesh(): THREE.Object3D {
-  const geometry = new THREE.BufferGeometry();
-  // Flaches Dreieck in der Boden-Ebene (y=0 lokal), Spitze nach +X.
-  const vertices = new Float32Array([0.8, 0, 0, -0.5, 0, 0.5, -0.5, 0, -0.5]);
-  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-  geometry.setIndex([0, 1, 2]);
-
-  const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0xdd2222, side: THREE.DoubleSide }));
-  // Sichtbar ueber Land-/Wassereinheiten schwebend, damit Flugzeuge auch
-  // ueber Bergen/anderen Einheiten erkennbar bleiben.
-  mesh.position.y = 3;
-  return mesh;
-}
-
-const MESH_FACTORIES: Record<UnitType, () => THREE.Object3D> = {
-  tank: createTankMesh,
-  infantry: createInfantryMesh,
-  boat: createBoatMesh,
-  plane: createPlaneMesh,
+// Kantenlaenge des Sprites in Welteinheiten (Kachel = 1x1).
+const SPRITE_SIZE: Record<UnitType, number> = {
+  tank: 1.2,
+  infantry: 0.8,
+  boat: 1.5,
+  plane: 1.4,
 };
+
+// Bodeneinheiten liegen knapp ueber der Kacheloberflaeche (gegen Z-Fighting,
+// oberhalb des Auswahlrings bei 0.05); Flugzeuge schweben sichtbar darueber,
+// damit sie auch ueber Bergen/anderen Einheiten erkennbar bleiben.
+const SPRITE_Y_OFFSET: Record<UnitType, number> = {
+  tank: 0.08,
+  infantry: 0.08,
+  boat: 0.08,
+  plane: 3,
+};
+
+let atlasMaterial: THREE.MeshBasicMaterial | null = null;
+
+function getAtlasMaterial(): THREE.MeshBasicMaterial {
+  if (!atlasMaterial) {
+    atlasMaterial = new THREE.MeshBasicMaterial({
+      map: createUnitAtlasTexture(),
+      side: THREE.DoubleSide,
+      // alphaTest statt transparent: schneidet die durchsichtigen Kachel-
+      // Raender hart aus, ohne die Sortierprobleme halbtransparenter
+      // Materialien (Sprites wuerden sonst je nach Kamerawinkel
+      // faelschlich hintereinander verschwinden).
+      alphaTest: 0.5,
+    });
+  }
+  return atlasMaterial;
+}
+
+const geometryCache = new Map<UnitType, THREE.PlaneGeometry>();
+
+// Eine PlaneGeometry pro Einheitentyp, deren UVs auf die Atlas-Kachel des
+// Typs zeigen - dadurch braucht es keinen Material-Wechsel pro Typ. Die
+// Geometrie wird zwischen allen Einheiten desselben Typs geteilt.
+function getUnitGeometry(unitType: UnitType): THREE.PlaneGeometry {
+  let geometry = geometryCache.get(unitType);
+  if (!geometry) {
+    const size = SPRITE_SIZE[unitType];
+    geometry = new THREE.PlaneGeometry(size, size);
+    const rect = getUnitUvRect(unitType);
+    const uv = geometry.getAttribute('uv') as THREE.BufferAttribute;
+    for (let i = 0; i < uv.count; i++) {
+      uv.setXY(i, rect.u0 + uv.getX(i) * (rect.u1 - rect.u0), rect.v0 + uv.getY(i) * (rect.v1 - rect.v0));
+    }
+    geometryCache.set(unitType, geometry);
+  }
+  return geometry;
+}
+
+function createUnitSprite(unitType: UnitType): THREE.Mesh {
+  const mesh = new THREE.Mesh(getUnitGeometry(unitType), getAtlasMaterial());
+  // Flach auf den Boden legen. Danach gilt: Canvas-x -> Welt +X und
+  // Canvas-y (nach unten) -> Welt +Z, also unverspiegelte Draufsicht -
+  // ein Sprite mit Fahrtrichtung nach Canvas-rechts (loader.ts) zeigt bei
+  // heading 0 nach Welt-+X, wie zuvor die Platzhalter-Geometrie.
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = SPRITE_Y_OFFSET[unitType];
+  return mesh;
+}
 
 // Auswahlring liegt flach auf dem Boden (auch unter Flugzeugen, deren Mesh
 // erhoeht schwebt) - dient als "Schatten"-Marker, welche Einheit gerade
@@ -75,7 +93,7 @@ function createSelectionRing(): THREE.Object3D {
 
 export function createUnitMesh(unitType: UnitType): THREE.Group {
   const group = new THREE.Group();
-  group.add(MESH_FACTORIES[unitType]());
+  group.add(createUnitSprite(unitType));
   group.add(createSelectionRing());
   return group;
 }
