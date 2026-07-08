@@ -9,7 +9,8 @@ import {
   tiltCamera,
   getGroundAxes,
 } from './render/camera.js';
-import { createScene, createPlaceholderGround } from './render/scene.js';
+import { createScene } from './render/scene.js';
+import { createTerrainMesh } from './render/terrain.js';
 import { createUnitMesh, applySnapshot } from './render/units.js';
 import { connectToServer, sendCommand } from './net/client.js';
 
@@ -46,8 +47,9 @@ const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVE
   onClose: () => console.log('Verbindung zum Server getrennt.'),
   onMessage: (message) => {
     if (message.type === 'hello') {
-      const ground = createPlaceholderGround(message.mapWidth, message.mapHeight);
-      scene.add(ground);
+      const terrainTypes = new Uint8Array(message.terrain);
+      const elevation = new Float32Array(message.elevation);
+      scene.add(createTerrainMesh(message.mapWidth, message.mapHeight, terrainTypes, elevation));
       return;
     }
 

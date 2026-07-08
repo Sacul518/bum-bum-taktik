@@ -1,4 +1,4 @@
-import type { ClientCommand, ServerMessage } from '@bum-bum-taktik/shared';
+import { decodeServerMessage, type ClientCommand, type ServerMessage } from '@bum-bum-taktik/shared';
 
 export interface ServerConnectionHandlers {
   onMessage: (message: ServerMessage) => void;
@@ -14,8 +14,7 @@ export function connectToServer(url: string, handlers: ServerConnectionHandlers)
   socket.addEventListener('open', () => handlers.onOpen?.());
   socket.addEventListener('close', () => handlers.onClose?.());
   socket.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data as string) as ServerMessage;
-    handlers.onMessage(message);
+    handlers.onMessage(decodeServerMessage(event.data as string));
   });
 
   return socket;

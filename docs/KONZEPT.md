@@ -304,3 +304,5 @@ Diese Aufteilung folgt bewusst den Ordnergrenzen, damit zwei Subagenten möglich
 - Genaue Kartengröße (z. B. 512×512 vs. 1024×1024 Kacheln) sollte nach ersten Performance-Tests auf echter Hardware festgelegt werden.
 - Ob Spielstände zwischen Sitzungen gespeichert werden müssen (aktuell angenommen: nein, jedes Match startet frisch) — falls doch, braucht es eine einfache Persistenzschicht (z. B. SQLite auf dem Pi).
 - Konkrete Marine-/Luftfahrt-Asset-Quelle noch zu recherchieren (Abschnitt 7).
+- Echter Wasser-Shader: Wasser-Kacheln sind aktuell nur einfarbige Platzhalter-Säulen (siehe `client/src/render/terrain.ts`). Später ein animiertes Wasser-Material (Wellen-Bewegung, Transparenz/Reflexion) wie in Abschnitt 4 als `waterGroup` vorgesehen.
+- Wetter-Partikelsystem (Regen, Schnee, Nebel o. ä.): noch nicht entworfen — Rendering-Ansatz (z. B. `THREE.Points` mit Textur-Atlas) und Performance-Budget für die iPad-GPU müssen noch geklärt werden, bevor das umgesetzt wird.
