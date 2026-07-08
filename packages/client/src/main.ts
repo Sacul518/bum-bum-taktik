@@ -192,6 +192,15 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+// Winkel muessen ueber die kuerzeste Differenz interpoliert werden: heading
+// kommt aus atan2 (-PI..PI), und beim Ueberschreiten dieser Grenze (z. B.
+// +3.1 -> -3.1) wuerde ein naives lerp durch fast 2*PI laufen - die Einheit
+// dreht dann sichtbar eine fast volle Runde in die falsche Richtung.
+function lerpAngle(a: number, b: number, t: number): number {
+  const delta = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+  return a + delta * t;
+}
+
 function interpolateEntity(id: string, current: EntitySnapshot): EntitySnapshot {
   const previous = previousSnapshot?.entities.get(id);
   if (!previous || !latestSnapshot) return current;
@@ -202,7 +211,7 @@ function interpolateEntity(id: string, current: EntitySnapshot): EntitySnapshot 
     ...current,
     x: lerp(previous.x, current.x, t),
     y: lerp(previous.y, current.y, t),
-    heading: lerp(previous.heading, current.heading, t),
+    heading: lerpAngle(previous.heading, current.heading, t),
   };
 }
 
