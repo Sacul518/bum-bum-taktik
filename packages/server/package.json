@@ -1,0 +1,16 @@
+{
+  "name": "@bum-bum-taktik/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "node --watch dist/index.js"
+  },
+  "dependencies": {
+    "@bum-bum-taktik/shared": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.5"
+  }
+}

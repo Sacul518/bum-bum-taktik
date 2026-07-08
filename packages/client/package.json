@@ -1,0 +1,16 @@
+{
+  "name": "@bum-bum-taktik/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build"
+  },
+  "dependencies": {
+    "@bum-bum-taktik/shared": "*"
+  },
+  "devDependencies": {
+    "vite": "^8.1.3"
+  }
+}
