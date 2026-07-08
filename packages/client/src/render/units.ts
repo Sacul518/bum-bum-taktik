@@ -58,10 +58,31 @@ const MESH_FACTORIES: Record<UnitType, () => THREE.Object3D> = {
   plane: createPlaneMesh,
 };
 
+// Auswahlring liegt flach auf dem Boden (auch unter Flugzeugen, deren Mesh
+// erhoeht schwebt) - dient als "Schatten"-Marker, welche Einheit gerade
+// selektiert ist (docs/KONZEPT.md Abschnitt 5.3).
+function createSelectionRing(): THREE.Object3D {
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.6, 0.78, 24),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.05; // knapp ueber dem Terrain gegen Z-Fighting
+  ring.visible = false;
+  ring.name = 'selectionRing';
+  return ring;
+}
+
 export function createUnitMesh(unitType: UnitType): THREE.Group {
   const group = new THREE.Group();
   group.add(MESH_FACTORIES[unitType]());
+  group.add(createSelectionRing());
   return group;
+}
+
+export function setSelected(group: THREE.Object3D, selected: boolean): void {
+  const ring = group.getObjectByName('selectionRing');
+  if (ring) ring.visible = selected;
 }
 
 // Server-x/y sind die Draufsicht-Koordinaten; in der Three.js-Szene bleibt y

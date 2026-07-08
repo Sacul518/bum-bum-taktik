@@ -17,4 +17,6 @@ export interface EntitySnapshot {
   y: number;
   heading: number;
   hp: number;
+  /** Verbleibende Wegpunkte in Weltkoordinaten, naechster zuerst - fuer den Path-Tracker im Client. */
+  path: Vector2[];
 }

@@ -137,5 +137,6 @@ export function advanceUnits(): EntitySnapshot[] {
     y: unit.y,
     heading: unit.heading,
     hp: 100,
+    path: unit.path.map((tile) => gridToWorld(tile, grids)),
   }));
 }

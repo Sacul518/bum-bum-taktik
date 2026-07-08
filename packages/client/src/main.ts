@@ -11,7 +11,8 @@ import {
 } from './render/camera.js';
 import { createScene } from './render/scene.js';
 import { createTerrainMesh, sampleElevation } from './render/terrain.js';
-import { createUnitMesh, applySnapshot } from './render/units.js';
+import { createUnitMesh, applySnapshot, setSelected } from './render/units.js';
+import { createPathLine, updatePathLine } from './render/path.js';
 import { connectToServer, sendCommand } from './net/client.js';
 
 const app = document.getElementById('app');
@@ -24,6 +25,9 @@ app.appendChild(renderer.domElement);
 const scene = createScene();
 const cameraRig = createCameraRig(window.innerWidth / window.innerHeight);
 const camera = cameraRig.camera;
+
+const pathLine = createPathLine();
+scene.add(pathLine);
 
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -41,6 +45,12 @@ interface BufferedSnapshot {
 let previousSnapshot: BufferedSnapshot | null = null;
 let latestSnapshot: BufferedSnapshot | null = null;
 const unitMeshes = new Map<string, THREE.Object3D>();
+
+// Auswahl (docs/KONZEPT.md Abschnitt 5.3): erster Klick auf eine Einheit
+// selektiert sie, ein zweiter Klick auf den Boden bewegt nur die Auswahl.
+// Aktuell genau eine Einheit gleichzeitig - Mehrfachauswahl (Drag-Box,
+// Hotkey-Gruppen) kommt spaeter.
+const selectedUnitIds = new Set<string>();
 
 // Vom "hello" gemerkt, damit der Renderloop weiter unten Einheiten auf die
 // tatsaechliche Kachelhoehe setzen kann (sonst sinken Fahrzeuge in Huegeln
@@ -90,6 +100,24 @@ function raycastGround(clientX: number, clientY: number): THREE.Vector3 | null {
   return raycaster.ray.intersectPlane(groundPlane, point) ? point : null;
 }
 
+// Prueft, ob der Klick eine Einheit trifft (fuer Auswahl statt Bewegung).
+// Nutzt denselben Raycaster wie raycastGround(), daher muss setFromCamera()
+// hier erneut aufgerufen werden - der Raycaster ist zustandsbehaftet.
+function raycastUnit(clientX: number, clientY: number): string | null {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointerNdc, camera);
+  const hits = raycaster.intersectObjects(Array.from(unitMeshes.values()), true);
+  if (hits.length === 0) return null;
+
+  let hitObject: THREE.Object3D | null = hits[0]!.object;
+  while (hitObject && !hitObject.userData.unitId) {
+    hitObject = hitObject.parent;
+  }
+  return (hitObject?.userData.unitId as string | undefined) ?? null;
+}
+
 interface DragState {
   pointerId: number;
   startX: number;
@@ -130,15 +158,18 @@ renderer.domElement.addEventListener('pointermove', (event) => {
 renderer.domElement.addEventListener('pointerup', (event) => {
   if (!drag || event.pointerId !== drag.pointerId) return;
 
-  if (!drag.moved && drag.anchorWorld) {
-    // Noch keine Auswahl-UI (Phase 1) - Klick-zum-Ziel bewegt vorerst alle
-    // bekannten Platzhalter-Einheiten gleichzeitig, jede pathfindet in ihrer
-    // eigenen Domain (docs/KONZEPT.md Abschnitt 3).
-    sendCommand(socket, {
-      type: 'move',
-      unitIds: Array.from(unitMeshes.keys()),
-      target: [drag.anchorWorld.x, drag.anchorWorld.z],
-    });
+  if (!drag.moved) {
+    const clickedUnitId = raycastUnit(event.clientX, event.clientY);
+    if (clickedUnitId) {
+      selectedUnitIds.clear();
+      selectedUnitIds.add(clickedUnitId);
+    } else if (drag.anchorWorld && selectedUnitIds.size > 0) {
+      sendCommand(socket, {
+        type: 'move',
+        unitIds: Array.from(selectedUnitIds),
+        target: [drag.anchorWorld.x, drag.anchorWorld.z],
+      });
+    }
   }
 
   drag = null;
@@ -210,19 +241,37 @@ function render(): void {
   if (pressedKeys.has('r')) tiltCamera(cameraRig, CAMERA_TILT_SPEED * deltaSeconds);
   if (pressedKeys.has('f')) tiltCamera(cameraRig, -CAMERA_TILT_SPEED * deltaSeconds);
 
+  // Path-Tracker: zeigt die verbleibende Route der ausgewaehlten Einheit
+  // (docs/KONZEPT.md Abschnitt 5.3). Wird unten im Entity-Loop befuellt,
+  // sobald die ausgewaehlte Einheit an der Reihe ist, und danach einmalig
+  // auf die wiederverwendete Linie angewandt.
+  let selectedPathPoints: THREE.Vector3[] = [];
+
   if (latestSnapshot) {
     for (const [id, snapshot] of latestSnapshot.entities) {
       let mesh = unitMeshes.get(id);
       if (!mesh) {
         mesh = createUnitMesh(snapshot.unitType);
+        mesh.userData.unitId = id;
         unitMeshes.set(id, mesh);
         scene.add(mesh);
       }
       const interpolated = interpolateEntity(id, snapshot);
       const terrainHeight = terrainElevation ? sampleElevation(interpolated.x, interpolated.y, mapWidth, mapHeight, terrainElevation) : 0;
       applySnapshot(mesh, interpolated, terrainHeight);
+      setSelected(mesh, selectedUnitIds.has(id));
+
+      if (selectedUnitIds.has(id) && snapshot.path.length > 0 && terrainElevation) {
+        selectedPathPoints = [new THREE.Vector3(interpolated.x, terrainHeight, interpolated.y)];
+        for (const waypoint of snapshot.path) {
+          const waypointHeight = sampleElevation(waypoint.x, waypoint.y, mapWidth, mapHeight, terrainElevation);
+          selectedPathPoints.push(new THREE.Vector3(waypoint.x, waypointHeight, waypoint.y));
+        }
+      }
     }
   }
+
+  updatePathLine(pathLine, selectedPathPoints);
 
   renderer.render(scene, camera);
 }

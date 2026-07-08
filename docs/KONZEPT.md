@@ -146,6 +146,8 @@ Ein zentraler `InputManager` verwaltet drei gleichzeitige Eingabequellen, ohne d
 ### 5.3 Zusammenspiel Hotkey + Tap-to-Target
 Typischer Ablauf: Spieler drückt Hotkey `1` (wählt Einheitengruppe 1) → tippt danach auf den Bildschirm → das Tap wird per Raycast (Kamera + Bildschirmkoordinaten) in Weltkoordinaten der Three.js-Szene umgerechnet → `move`-Befehl mit diesem Ziel an den Server.
 
+**Offen für später — Truppenauswahl über das Terminal statt über Bildschirm-Buttons:** Bewusst *keine* zusätzlichen Side-Buttons für die Truppenauswahl einplanen. Auf einem iPad ist Bildschirmfläche knapp, und ein weiteres UI-Element würde mit der Sensor-Overlay-Fläche (Abschnitt 4) konkurrieren. Stattdessen passt Truppenauswahl besser als Befehl in das ohnehin geplante In-Game-Terminal (Abschnitt 6), z. B. `select tank-1` oder `select all land` — konsistent mit den dortigen Befehlen (`drone list`, `drone move`, …) und ohne zusätzliche Touch-Fläche. Klick-zum-Selektieren direkt auf die Einheit (aktuell in `client/src/main.ts` implementiert) bleibt der primäre Weg; die Terminal-Variante wäre eine Ergänzung für präzise/mehrfache Auswahl.
+
 ---
 
 ## 6. In-Game-Terminal (CLI)
@@ -162,7 +164,7 @@ export function registerCommand(name: string, handler: CommandHandler) {
 }
 ```
 
-Beispielbefehle: `drone list`, `drone move <id> <x> <y>`, `hack <zielId>` (löst Hacking-Minispiel/Skill-Check aus), `recon <x> <y> <radius>` (Aufklärungs-Sweep, deckt Fog-of-War-Bereich auf, ggf. mit Cooldown).
+Beispielbefehle: `drone list`, `drone move <id> <x> <y>`, `hack <zielId>` (löst Hacking-Minispiel/Skill-Check aus), `recon <x> <y> <radius>` (Aufklärungs-Sweep, deckt Fog-of-War-Bereich auf, ggf. mit Cooldown), `select <id...>` / `select all <domain>` (Truppenauswahl über das Terminal statt über zusätzliche Bildschirm-Buttons — siehe Abschnitt 5.3).
 
 ---
 
