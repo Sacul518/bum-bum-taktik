@@ -175,6 +175,15 @@ renderer.domElement.addEventListener('pointerup', (event) => {
   drag = null;
 });
 
+// Auf Touch-Geraeten (iPad!) beendet das System eine Beruehrung auch per
+// pointercancel statt pointerup, z. B. bei Systemgesten oder App-Wechsel -
+// ohne diesen Handler bliebe der Drag-Zustand dann haengen.
+renderer.domElement.addEventListener('pointercancel', (event) => {
+  if (drag && event.pointerId === drag.pointerId) {
+    drag = null;
+  }
+});
+
 // Tastatur-Kamerasteuerung fuer Tests ohne Touch-Geraet: WASD schwenkt,
 // Q/E dreht, R/F neigt. Nur unmodifizierte Tasten (docs/KONZEPT.md
 // Abschnitt 5.2). Platzhalter-Belegung fuer den Smoke-Test - das richtige
