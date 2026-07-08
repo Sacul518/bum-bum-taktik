@@ -8,9 +8,11 @@
     "dev": "node --watch dist/index.js"
   },
   "dependencies": {
-    "@bum-bum-taktik/shared": "*"
+    "@bum-bum-taktik/shared": "*",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.5"
+    "@types/node": "^25.9.5",
+    "@types/ws": "^8.18.1"
   }
 }

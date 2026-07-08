@@ -8,9 +8,11 @@
     "build": "tsc -b && vite build"
   },
   "dependencies": {
-    "@bum-bum-taktik/shared": "*"
+    "@bum-bum-taktik/shared": "*",
+    "three": "^0.185.1"
   },
   "devDependencies": {
+    "@types/three": "^0.185.0",
     "vite": "^8.1.3"
   }
 }
