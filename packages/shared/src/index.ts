@@ -1,3 +1,5 @@
-// Platzhalter fuer Schritt 2 (Workspace/TS-Fundament).
-// protocol.ts und types.ts folgen in Schritt 3.
+export * from './types.js';
+export * from './protocol.js';
+export * from './constants.js';
+
 export const PACKAGE_NAME = '@bum-bum-taktik/shared';
