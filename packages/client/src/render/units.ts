@@ -70,6 +70,10 @@ function createSelectionRing(): THREE.Object3D {
   ring.position.y = 0.05; // knapp ueber dem Terrain gegen Z-Fighting
   ring.visible = false;
   ring.name = 'selectionRing';
+  // THREE.Raycaster testet auch unsichtbare Objekte. Ohne diese Ausnahme
+  // faengt der Ring der selektierten Einheit Bodenklicks in seinem Radius ab -
+  // ein Move-Befehl knapp neben die Einheit wuerde sie nur erneut selektieren.
+  ring.raycast = () => {};
   return ring;
 }
 
