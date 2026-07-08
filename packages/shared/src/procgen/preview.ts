@@ -1,4 +1,5 @@
 import { generateTerrain, TERRAIN_TYPES, type TerrainType } from './terrain.js';
+import { computeWalkability } from './walkability.js';
 
 // Handbetriebenes Werkzeug zum Ansehen/Balancing der Terrain-Generierung
 // (docs/KONZEPT.md Abschnitt 8.1, Subagent E). Aufruf: npm run preview -w @bum-bum-taktik/shared
@@ -42,3 +43,27 @@ for (const type of TERRAIN_TYPES) {
   const count = counts.get(type) ?? 0;
   console.log(`  ${type.padEnd(12)} ${((count / total) * 100).toFixed(1)}%`);
 }
+
+// Begehbarkeits-Raster (docs/KONZEPT.md Abschnitt 3): Land- und Wasser-Domain
+// visuell gegen die Terrain-Karte oben pruefen - Kuestenlinie sollte exakt
+// dort umschlagen, wo die beiden Raster sich abloesen. Luft ist aktuell
+// ueberall begehbar und daher nicht separat abgebildet.
+const walkability = computeWalkability(map);
+
+function printWalkabilityGrid(grid: Uint8Array, walkableChar: string): void {
+  const gridLines: string[] = [];
+  for (let y = 0; y < map.height; y++) {
+    let line = '';
+    for (let x = 0; x < map.width; x++) {
+      line += grid[y * map.width + x] ? walkableChar : ' ';
+    }
+    gridLines.push(line);
+  }
+  console.log(gridLines.join('\n'));
+}
+
+console.log('\nBegehbarkeits-Raster Land (X = begehbar):');
+printWalkabilityGrid(walkability.land, 'X');
+
+console.log('\nBegehbarkeits-Raster Wasser (O = befahrbar):');
+printWalkabilityGrid(walkability.water, 'O');

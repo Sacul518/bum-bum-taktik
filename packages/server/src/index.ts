@@ -2,13 +2,14 @@ import { WebSocketServer } from 'ws';
 import {
   DEFAULT_SERVER_PORT,
   TICK_INTERVAL_MS,
+  computeWalkability,
   encodeServerMessage,
   generateTerrain,
   type ClientCommand,
   type ServerHello,
   type StateUpdate,
 } from '@bum-bum-taktik/shared';
-import { advanceUnit, setUnitTarget } from './gameLoop.js';
+import { advanceUnits, initUnits, setUnitTargets } from './gameLoop.js';
 
 // Platzhalter-Kartengroesse; die endgueltige Groesse wird nach Performance-
 // Tests auf echter Hardware festgelegt (siehe docs/KONZEPT.md "Offene Punkte").
@@ -23,6 +24,9 @@ const TERRAIN_SEED = 1;
 
 const map = generateTerrain(MAP_WIDTH, MAP_HEIGHT, { seed: TERRAIN_SEED });
 console.log(`Karte generiert: ${MAP_WIDTH}x${MAP_HEIGHT}, Seed ${TERRAIN_SEED}`);
+
+const walkability = computeWalkability(map);
+initUnits(walkability);
 
 const wss = new WebSocketServer({ port: DEFAULT_SERVER_PORT });
 console.log(`Server laeuft auf ws://localhost:${DEFAULT_SERVER_PORT}`);
@@ -48,7 +52,7 @@ wss.on('connection', (socket) => {
     try {
       const command = JSON.parse(data.toString()) as ClientCommand;
       if (command.type === 'move') {
-        setUnitTarget(command.target[0], command.target[1]);
+        setUnitTargets(command.unitIds, command.target[0], command.target[1]);
       }
     } catch (err) {
       console.error('Ungueltiger Client-Befehl:', err);
@@ -65,7 +69,7 @@ setInterval(() => {
   const state: StateUpdate = {
     type: 'state',
     tick,
-    entities: [advanceUnit()],
+    entities: advanceUnits(),
     visibleEnemyIds: [],
   };
   const payload = encodeServerMessage(state);

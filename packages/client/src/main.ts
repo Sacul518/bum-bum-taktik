@@ -10,7 +10,7 @@ import {
   getGroundAxes,
 } from './render/camera.js';
 import { createScene } from './render/scene.js';
-import { createTerrainMesh } from './render/terrain.js';
+import { createTerrainMesh, sampleElevation } from './render/terrain.js';
 import { createUnitMesh, applySnapshot } from './render/units.js';
 import { connectToServer, sendCommand } from './net/client.js';
 
@@ -42,14 +42,23 @@ let previousSnapshot: BufferedSnapshot | null = null;
 let latestSnapshot: BufferedSnapshot | null = null;
 const unitMeshes = new Map<string, THREE.Object3D>();
 
+// Vom "hello" gemerkt, damit der Renderloop weiter unten Einheiten auf die
+// tatsaechliche Kachelhoehe setzen kann (sonst sinken Fahrzeuge in Huegeln
+// ein bzw. schweben ueber tieferem Wasser).
+let terrainElevation: Float32Array | null = null;
+let mapWidth = 0;
+let mapHeight = 0;
+
 const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVER_PORT}`, {
   onOpen: () => console.log('Mit Server verbunden.'),
   onClose: () => console.log('Verbindung zum Server getrennt.'),
   onMessage: (message) => {
     if (message.type === 'hello') {
       const terrainTypes = new Uint8Array(message.terrain);
-      const elevation = new Float32Array(message.elevation);
-      scene.add(createTerrainMesh(message.mapWidth, message.mapHeight, terrainTypes, elevation));
+      mapWidth = message.mapWidth;
+      mapHeight = message.mapHeight;
+      terrainElevation = new Float32Array(message.elevation);
+      scene.add(createTerrainMesh(mapWidth, mapHeight, terrainTypes, terrainElevation));
       return;
     }
 
@@ -122,9 +131,12 @@ renderer.domElement.addEventListener('pointerup', (event) => {
   if (!drag || event.pointerId !== drag.pointerId) return;
 
   if (!drag.moved && drag.anchorWorld) {
+    // Noch keine Auswahl-UI (Phase 1) - Klick-zum-Ziel bewegt vorerst alle
+    // bekannten Platzhalter-Einheiten gleichzeitig, jede pathfindet in ihrer
+    // eigenen Domain (docs/KONZEPT.md Abschnitt 3).
     sendCommand(socket, {
       type: 'move',
-      unitIds: ['unit-1'],
+      unitIds: Array.from(unitMeshes.keys()),
       target: [drag.anchorWorld.x, drag.anchorWorld.z],
     });
   }
@@ -202,11 +214,13 @@ function render(): void {
     for (const [id, snapshot] of latestSnapshot.entities) {
       let mesh = unitMeshes.get(id);
       if (!mesh) {
-        mesh = createUnitMesh();
+        mesh = createUnitMesh(snapshot.unitType);
         unitMeshes.set(id, mesh);
         scene.add(mesh);
       }
-      applySnapshot(mesh, interpolateEntity(id, snapshot));
+      const interpolated = interpolateEntity(id, snapshot);
+      const terrainHeight = terrainElevation ? sampleElevation(interpolated.x, interpolated.y, mapWidth, mapHeight, terrainElevation) : 0;
+      applySnapshot(mesh, interpolated, terrainHeight);
     }
   }
 

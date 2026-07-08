@@ -14,7 +14,7 @@ const TERRAIN_COLORS: Record<TerrainType, THREE.Color> = {
 
 // Elevation (-1..1) auf Welteinheiten skaliert, damit Huegel/Berge sichtbar
 // aufragen und Wasser sichtbar tiefer liegt.
-const HEIGHT_SCALE = 6;
+export const HEIGHT_SCALE = 6;
 // Tiefer als jede moegliche Kachelhoehe (min. -1 * HEIGHT_SCALE), damit die
 // Seitenwaende jeder Kachel garantiert bis unter die tiefste Nachbarkachel
 // reichen - sonst entstehen Luecken zwischen unterschiedlich hohen Nachbarn.
@@ -98,4 +98,13 @@ export function createTerrainMesh(
 
   const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
   return new THREE.Mesh(geometry, material);
+}
+
+// Gleiche Koordinatenumrechnung wie oben (Weltursprung = Kartenmitte), damit
+// Einheiten in units.ts auf der tatsaechlichen Kachelhoehe stehen statt immer
+// auf y=0 - sonst sinken sie in Huegeln ein bzw. schweben ueber Wasser.
+export function sampleElevation(worldX: number, worldZ: number, width: number, height: number, elevation: Float32Array): number {
+  const gx = Math.min(Math.max(Math.floor(worldX + width / 2), 0), width - 1);
+  const gz = Math.min(Math.max(Math.floor(worldZ + height / 2), 0), height - 1);
+  return (elevation[gz * width + gx] as number) * HEIGHT_SCALE;
 }

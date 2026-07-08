@@ -1,9 +1,21 @@
+import type { Domain, UnitType } from './types.js';
+
 export const TICK_RATE_HZ = 12;
 export const TICK_INTERVAL_MS = 1000 / TICK_RATE_HZ;
 
 export const DEFAULT_SERVER_PORT = 8081;
 
 export const DOMAINS = ['land', 'water', 'air'] as const;
+
+// Welche Domain (Begehbarkeits-Raster) fuer welchen Einheitentyp gilt -
+// zentral hier statt verstreut, damit Server (Pathfinding) und Client
+// (Rendering) dieselbe Zuordnung verwenden.
+export const UNIT_DOMAIN: Record<UnitType, Domain> = {
+  tank: 'land',
+  infantry: 'land',
+  boat: 'water',
+  plane: 'air',
+};
 
 // Schwellenwerte fuer den Hoehenwert e (-1..1) aus der Terrain-Generierung,
 // siehe docs/KONZEPT.md Abschnitt 3.
