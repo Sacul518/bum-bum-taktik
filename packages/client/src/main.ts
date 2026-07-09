@@ -7,13 +7,15 @@ import {
   panCamera,
   rotateCamera,
   tiltCamera,
+  zoomCamera,
   getGroundAxes,
 } from './render/camera.js';
 import { createScene } from './render/scene.js';
 import { createTerrainMesh, sampleElevation } from './render/terrain.js';
-import { createUnitMesh, applySnapshot, setSelected } from './render/units.js';
+import { createUnitMesh, applySnapshot, setSelected, preloadUnitAtlas } from './render/units.js';
 import { createPathLine, updatePathLine } from './render/path.js';
 import { connectToServer, sendCommand } from './net/client.js';
+import { resolveCameraInput } from './input/hotkeys.js';
 
 const app = document.getElementById('app');
 if (!app) throw new Error('#app fehlt in index.html');
@@ -31,7 +33,7 @@ scene.add(pathLine);
 
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
-  updateCameraAspect(camera, window.innerWidth / window.innerHeight);
+  updateCameraAspect(cameraRig, window.innerWidth / window.innerHeight);
 });
 
 // Snapshot-Interpolation (docs/KONZEPT.md Abschnitt 2.1): der Client haelt
@@ -58,6 +60,13 @@ const selectedUnitIds = new Set<string>();
 let terrainElevation: Float32Array | null = null;
 let mapWidth = 0;
 let mapHeight = 0;
+
+// Einheiten-Atlas laedt echte Sprite-Bilder (render/loader.ts) und ist daher
+// asynchron - erst awaiten, dann verbinden, damit beim Eintreffen der ersten
+// "state"-Nachricht createUnitMesh() bereits synchron auf das fertige
+// Material zugreifen kann (docs/KONZEPT.md Abschnitt 7: Atlanten vorab
+// laden).
+await preloadUnitAtlas();
 
 const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVER_PORT}`, {
   onOpen: () => console.log('Mit Server verbunden.'),
@@ -91,6 +100,21 @@ const DRAG_THRESHOLD_PX = 6;
 
 renderer.domElement.style.touchAction = 'none';
 
+// Mausrad-Zoom fuer Desktop-Tests (docs/KONZEPT.md Abschnitt 5.1/9). Faktor
+// statt fixem Schritt, damit ein- und dasselbe "Wheel-Tick" bei jeder
+// Zoomstufe gleich stark wirkt (multiplikativ statt additiv). preventDefault
+// + { passive: false } noetig, sonst scrollt Safari/Chrome stattdessen die
+// Seite.
+const WHEEL_ZOOM_SPEED = 0.001;
+renderer.domElement.addEventListener(
+  'wheel',
+  (event) => {
+    event.preventDefault();
+    zoomCamera(cameraRig, Math.exp(event.deltaY * WHEEL_ZOOM_SPEED));
+  },
+  { passive: false },
+);
+
 function raycastGround(clientX: number, clientY: number): THREE.Vector3 | null {
   const rect = renderer.domElement.getBoundingClientRect();
   pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -118,6 +142,21 @@ function raycastUnit(clientX: number, clientY: number): string | null {
   return (hitObject?.userData.unitId as string | undefined) ?? null;
 }
 
+// Aktive Finger/Zeiger in einer Map<pointerId, {x,y}> verfolgt (docs/KONZEPT.md
+// Abschnitt 5.1) statt nur eines einzelnen Drag-Zustands - Voraussetzung fuer
+// Pinch-Zoom: aus der Abstandsaenderung zwischen zwei gleichzeitigen Zeigern
+// wird der Zoom-Faktor berechnet.
+const activePointers = new Map<number, { x: number; y: number }>();
+let pinchDistance: number | null = null;
+
+function distanceBetweenPointers(): number | null {
+  if (activePointers.size < 2) return null;
+  const it = activePointers.values();
+  const a = it.next().value!;
+  const b = it.next().value!;
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
 interface DragState {
   pointerId: number;
   startX: number;
@@ -131,16 +170,41 @@ let drag: DragState | null = null;
 renderer.domElement.addEventListener('pointerdown', (event) => {
   event.preventDefault();
   renderer.domElement.setPointerCapture(event.pointerId);
-  drag = {
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    moved: false,
-    anchorWorld: raycastGround(event.clientX, event.clientY),
-  };
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+  if (activePointers.size === 2) {
+    // Zweiter Finger kommt dazu: Pinch-Zoom startet. Ein laufender
+    // Ein-Finger-Drag wird verworfen, damit sich Schwenken und Zoomen nicht
+    // gegenseitig in die Quere kommen.
+    drag = null;
+    pinchDistance = distanceBetweenPointers();
+  } else if (activePointers.size === 1) {
+    drag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      anchorWorld: raycastGround(event.clientX, event.clientY),
+    };
+  }
 });
 
 renderer.domElement.addEventListener('pointermove', (event) => {
+  if (!activePointers.has(event.pointerId)) return;
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+  if (activePointers.size === 2) {
+    const currentDistance = distanceBetweenPointers();
+    if (pinchDistance !== null && currentDistance !== null && currentDistance > 0) {
+      // Finger auseinander (currentDistance waechst gegenueber vorher) heisst
+      // heranzoomen, daher der Kehrwert (zoomCamera: factor > 1 = herauszoomen,
+      // siehe camera.ts).
+      zoomCamera(cameraRig, pinchDistance / currentDistance);
+    }
+    pinchDistance = currentDistance;
+    return;
+  }
+
   if (!drag || event.pointerId !== drag.pointerId) return;
 
   if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > DRAG_THRESHOLD_PX) {
@@ -156,6 +220,9 @@ renderer.domElement.addEventListener('pointermove', (event) => {
 });
 
 renderer.domElement.addEventListener('pointerup', (event) => {
+  activePointers.delete(event.pointerId);
+  pinchDistance = activePointers.size === 2 ? distanceBetweenPointers() : null;
+
   if (!drag || event.pointerId !== drag.pointerId) return;
 
   if (!drag.moved) {
@@ -177,8 +244,10 @@ renderer.domElement.addEventListener('pointerup', (event) => {
 
 // Auf Touch-Geraeten (iPad!) beendet das System eine Beruehrung auch per
 // pointercancel statt pointerup, z. B. bei Systemgesten oder App-Wechsel -
-// ohne diesen Handler bliebe der Drag-Zustand dann haengen.
+// ohne diesen Handler bliebe der Drag-/Pinch-Zustand dann haengen.
 renderer.domElement.addEventListener('pointercancel', (event) => {
+  activePointers.delete(event.pointerId);
+  pinchDistance = activePointers.size === 2 ? distanceBetweenPointers() : null;
   if (drag && event.pointerId === drag.pointerId) {
     drag = null;
   }
@@ -186,8 +255,8 @@ renderer.domElement.addEventListener('pointercancel', (event) => {
 
 // Tastatur-Kamerasteuerung fuer Tests ohne Touch-Geraet: WASD schwenkt,
 // Q/E dreht, R/F neigt. Nur unmodifizierte Tasten (docs/KONZEPT.md
-// Abschnitt 5.2). Platzhalter-Belegung fuer den Smoke-Test - das richtige
-// Eingabe-System (Hotkeys, Terminal-Fokus-Schutz) kommt in Phase 1.
+// Abschnitt 5.2), Zuordnung Taste->Achse steckt in input/hotkeys.ts.
+// Terminal-Fokus-Schutz kommt erst mit dem Terminal-Widget in Phase 3.
 const CAMERA_PAN_SPEED = 20; // Welteinheiten pro Sekunde
 const CAMERA_ROTATE_SPEED = 1.2; // rad/s
 const CAMERA_TILT_SPEED = 1.0; // rad/s
@@ -236,17 +305,12 @@ function render(): void {
   // Vorwaerts/Rechts kommen aus dem aktuellen Kamerawinkel, nicht aus den
   // Weltachsen - sonst liefe "vorwaerts" nach einer Drehung schraeg statt
   // geradeaus auf dem Bildschirm.
-  let moveForward = 0;
-  let moveRight = 0;
-  if (pressedKeys.has('w')) moveForward += 1;
-  if (pressedKeys.has('s')) moveForward -= 1;
-  if (pressedKeys.has('d')) moveRight += 1;
-  if (pressedKeys.has('a')) moveRight -= 1;
-  if (moveForward !== 0 || moveRight !== 0) {
+  const cameraInput = resolveCameraInput(pressedKeys);
+  if (cameraInput.panForward !== 0 || cameraInput.panRight !== 0) {
     const { forward, right } = getGroundAxes(cameraRig);
-    const length = Math.hypot(moveForward, moveRight);
-    const stepForward = (moveForward / length) * CAMERA_PAN_SPEED * deltaSeconds;
-    const stepRight = (moveRight / length) * CAMERA_PAN_SPEED * deltaSeconds;
+    const length = Math.hypot(cameraInput.panForward, cameraInput.panRight);
+    const stepForward = (cameraInput.panForward / length) * CAMERA_PAN_SPEED * deltaSeconds;
+    const stepRight = (cameraInput.panRight / length) * CAMERA_PAN_SPEED * deltaSeconds;
     panCamera(
       cameraRig,
       forward.x * stepForward + right.x * stepRight,
@@ -254,10 +318,8 @@ function render(): void {
     );
   }
 
-  if (pressedKeys.has('q')) rotateCamera(cameraRig, -CAMERA_ROTATE_SPEED * deltaSeconds);
-  if (pressedKeys.has('e')) rotateCamera(cameraRig, CAMERA_ROTATE_SPEED * deltaSeconds);
-  if (pressedKeys.has('r')) tiltCamera(cameraRig, CAMERA_TILT_SPEED * deltaSeconds);
-  if (pressedKeys.has('f')) tiltCamera(cameraRig, -CAMERA_TILT_SPEED * deltaSeconds);
+  if (cameraInput.rotate !== 0) rotateCamera(cameraRig, cameraInput.rotate * CAMERA_ROTATE_SPEED * deltaSeconds);
+  if (cameraInput.tilt !== 0) tiltCamera(cameraRig, cameraInput.tilt * CAMERA_TILT_SPEED * deltaSeconds);
 
   // Path-Tracker: zeigt die verbleibende Route der ausgewaehlten Einheit
   // (docs/KONZEPT.md Abschnitt 5.3). Wird unten im Entity-Loop befuellt,

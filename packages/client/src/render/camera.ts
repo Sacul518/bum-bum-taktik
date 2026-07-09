@@ -3,7 +3,13 @@ import * as THREE from 'three';
 // Sichtbare Hoehe des Frustums in Weltkoordinaten. "Zoom" bedeutet bei einer
 // orthografischen Kamera, diesen Wert zu aendern - NICHT die Kamera per
 // Dolly naeher heranzufahren (siehe docs/KONZEPT.md Abschnitt 4).
-const VIEW_SIZE = 40;
+const DEFAULT_VIEW_SIZE = 40;
+// Karte ist 100x100 Weltkacheln (packages/server/src/index.ts). Grenzen so
+// gewaehlt, dass man sowohl nah an einzelne Einheiten heran (10) als auch
+// nahe an die volle Kartenbreite heraus (100) zoomen kann, ohne sie zu
+// sprengen.
+const MIN_VIEW_SIZE = 10;
+const MAX_VIEW_SIZE = 100;
 
 const DEFAULT_DISTANCE = Math.sqrt(3) * 50; // Betrag des urspruenglichen Versatzes (50,50,50)
 const DEFAULT_AZIMUTH = Math.PI / 4; // 45°, wie zuvor die feste Position
@@ -26,17 +32,12 @@ export interface CameraRig {
   azimuth: number;
   tilt: number;
   distance: number;
+  viewSize: number;
+  aspect: number;
 }
 
 export function createCameraRig(aspect: number): CameraRig {
-  const camera = new THREE.OrthographicCamera(
-    (-VIEW_SIZE * aspect) / 2,
-    (VIEW_SIZE * aspect) / 2,
-    VIEW_SIZE / 2,
-    -VIEW_SIZE / 2,
-    0.1,
-    1000,
-  );
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
 
   const rig: CameraRig = {
     camera,
@@ -44,17 +45,36 @@ export function createCameraRig(aspect: number): CameraRig {
     azimuth: DEFAULT_AZIMUTH,
     tilt: DEFAULT_TILT,
     distance: DEFAULT_DISTANCE,
+    viewSize: DEFAULT_VIEW_SIZE,
+    aspect,
   };
+  updateCameraFrustum(rig);
   updateCameraTransform(rig);
   return rig;
 }
 
-export function updateCameraAspect(camera: THREE.OrthographicCamera, aspect: number): void {
-  camera.left = (-VIEW_SIZE * aspect) / 2;
-  camera.right = (VIEW_SIZE * aspect) / 2;
-  camera.top = VIEW_SIZE / 2;
-  camera.bottom = -VIEW_SIZE / 2;
-  camera.updateProjectionMatrix();
+// Setzt das Frustum (left/right/top/bottom) aus viewSize + aspect neu -
+// gemeinsamer Weg fuer Fenstergroessen-Aenderungen (Aspect) und Zoom
+// (viewSize), da beide dieselben vier Werte beeinflussen.
+function updateCameraFrustum(rig: CameraRig): void {
+  rig.camera.left = (-rig.viewSize * rig.aspect) / 2;
+  rig.camera.right = (rig.viewSize * rig.aspect) / 2;
+  rig.camera.top = rig.viewSize / 2;
+  rig.camera.bottom = -rig.viewSize / 2;
+  rig.camera.updateProjectionMatrix();
+}
+
+export function updateCameraAspect(rig: CameraRig, aspect: number): void {
+  rig.aspect = aspect;
+  updateCameraFrustum(rig);
+}
+
+// factor > 1 zoomt heraus (groesserer Ausschnitt), factor < 1 zoomt heran -
+// dieselbe Konvention wie WheelEvent.deltaY (positiv = vom Nutzer weg
+// gescrollt = herauszoomen).
+export function zoomCamera(rig: CameraRig, factor: number): void {
+  rig.viewSize = THREE.MathUtils.clamp(rig.viewSize * factor, MIN_VIEW_SIZE, MAX_VIEW_SIZE);
+  updateCameraFrustum(rig);
 }
 
 function updateCameraTransform(rig: CameraRig): void {

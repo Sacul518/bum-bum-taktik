@@ -30,18 +30,26 @@ const SPRITE_Y_OFFSET: Record<UnitType, number> = {
 
 let atlasMaterial: THREE.MeshBasicMaterial | null = null;
 
+// Die Atlas-Textur laedt inzwischen echte Sprite-Bilder (loader.ts) und ist
+// deshalb asynchron. preloadUnitAtlas() muss einmal awaited werden, bevor
+// die erste Einheit erzeugt wird (main.ts vor dem Verbindungsaufbau) - danach
+// bleibt createUnitMesh() synchron, weil das Material schon im Cache liegt.
+export async function preloadUnitAtlas(): Promise<void> {
+  if (atlasMaterial) return;
+  const texture = await createUnitAtlasTexture();
+  atlasMaterial = new THREE.MeshBasicMaterial({
+    map: texture,
+    side: THREE.DoubleSide,
+    // alphaTest statt transparent: schneidet die durchsichtigen Kachel-
+    // Raender hart aus, ohne die Sortierprobleme halbtransparenter
+    // Materialien (Sprites wuerden sonst je nach Kamerawinkel
+    // faelschlich hintereinander verschwinden).
+    alphaTest: 0.5,
+  });
+}
+
 function getAtlasMaterial(): THREE.MeshBasicMaterial {
-  if (!atlasMaterial) {
-    atlasMaterial = new THREE.MeshBasicMaterial({
-      map: createUnitAtlasTexture(),
-      side: THREE.DoubleSide,
-      // alphaTest statt transparent: schneidet die durchsichtigen Kachel-
-      // Raender hart aus, ohne die Sortierprobleme halbtransparenter
-      // Materialien (Sprites wuerden sonst je nach Kamerawinkel
-      // faelschlich hintereinander verschwinden).
-      alphaTest: 0.5,
-    });
-  }
+  if (!atlasMaterial) throw new Error('Atlas noch nicht geladen - preloadUnitAtlas() zuerst awaiten');
   return atlasMaterial;
 }
 
