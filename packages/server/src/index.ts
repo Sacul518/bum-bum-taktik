@@ -31,6 +31,10 @@ initUnits(walkability);
 const wss = new WebSocketServer({ port: DEFAULT_SERVER_PORT });
 console.log(`Server laeuft auf ws://localhost:${DEFAULT_SERVER_PORT}`);
 
+wss.on('error', (err) => {
+  console.error('WebSocket-Server-Fehler:', err);
+});
+
 let nextPlayerNumber = 1;
 let tick = 0;
 
@@ -61,6 +65,13 @@ wss.on('connection', (socket) => {
 
   socket.on('close', () => {
     console.log(`Client getrennt: ${playerId}`);
+  });
+
+  // ws-Sockets sind EventEmitter: ein error-Event ohne Listener wirft und
+  // beendet den ganzen Node-Prozess - ein einziger Verbindungsfehler (z. B.
+  // iPad im Ruhezustand, TCP-Reset) wuerde sonst den Server fuer alle killen.
+  socket.on('error', (err) => {
+    console.error(`Socket-Fehler (${playerId}):`, err);
   });
 });
 
