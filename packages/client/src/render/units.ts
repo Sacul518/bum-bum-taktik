@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { EntitySnapshot, UnitType } from '@bum-bum-taktik/shared';
+import { COMBAT_STATS, type EntitySnapshot, type Faction, type UnitType } from '@bum-bum-taktik/shared';
 import { createUnitAtlasTexture, getUnitUvRect } from './loader.js';
 
 // Einheiten als flache Draufsicht-Sprites aus dem Textur-Atlas (loader.ts,
@@ -28,29 +28,45 @@ const SPRITE_Y_OFFSET: Record<UnitType, number> = {
   plane: 3,
 };
 
-let atlasMaterial: THREE.MeshBasicMaterial | null = null;
+let atlasTexture: THREE.Texture | null = null;
+
+// Ein Material pro Fraktion (beide teilen sich dieselbe Atlas-Textur):
+// die MeshBasicMaterial-Farbe multipliziert die Textur, Feind-Einheiten
+// bekommen so eine rote Toenung ohne eigene Sprites (Platzhalter bis zum
+// Grafik-Feinschliff in Phase 4).
+const FACTION_TINT: Record<Faction, number> = {
+  player: 0xffffff,
+  enemy: 0xff7777,
+};
+
+const atlasMaterials = new Map<Faction, THREE.MeshBasicMaterial>();
 
 // Die Atlas-Textur laedt inzwischen echte Sprite-Bilder (loader.ts) und ist
 // deshalb asynchron. preloadUnitAtlas() muss einmal awaited werden, bevor
 // die erste Einheit erzeugt wird (main.ts vor dem Verbindungsaufbau) - danach
-// bleibt createUnitMesh() synchron, weil das Material schon im Cache liegt.
+// bleibt createUnitMesh() synchron, weil die Textur schon im Cache liegt.
 export async function preloadUnitAtlas(): Promise<void> {
-  if (atlasMaterial) return;
-  const texture = await createUnitAtlasTexture();
-  atlasMaterial = new THREE.MeshBasicMaterial({
-    map: texture,
-    side: THREE.DoubleSide,
-    // alphaTest statt transparent: schneidet die durchsichtigen Kachel-
-    // Raender hart aus, ohne die Sortierprobleme halbtransparenter
-    // Materialien (Sprites wuerden sonst je nach Kamerawinkel
-    // faelschlich hintereinander verschwinden).
-    alphaTest: 0.5,
-  });
+  if (atlasTexture) return;
+  atlasTexture = await createUnitAtlasTexture();
 }
 
-function getAtlasMaterial(): THREE.MeshBasicMaterial {
-  if (!atlasMaterial) throw new Error('Atlas noch nicht geladen - preloadUnitAtlas() zuerst awaiten');
-  return atlasMaterial;
+function getAtlasMaterial(faction: Faction): THREE.MeshBasicMaterial {
+  if (!atlasTexture) throw new Error('Atlas noch nicht geladen - preloadUnitAtlas() zuerst awaiten');
+  let material = atlasMaterials.get(faction);
+  if (!material) {
+    material = new THREE.MeshBasicMaterial({
+      map: atlasTexture,
+      color: FACTION_TINT[faction],
+      side: THREE.DoubleSide,
+      // alphaTest statt transparent: schneidet die durchsichtigen Kachel-
+      // Raender hart aus, ohne die Sortierprobleme halbtransparenter
+      // Materialien (Sprites wuerden sonst je nach Kamerawinkel
+      // faelschlich hintereinander verschwinden).
+      alphaTest: 0.5,
+    });
+    atlasMaterials.set(faction, material);
+  }
+  return material;
 }
 
 const geometryCache = new Map<UnitType, THREE.PlaneGeometry>();
@@ -73,8 +89,8 @@ function getUnitGeometry(unitType: UnitType): THREE.PlaneGeometry {
   return geometry;
 }
 
-function createUnitSprite(unitType: UnitType): THREE.Mesh {
-  const mesh = new THREE.Mesh(getUnitGeometry(unitType), getAtlasMaterial());
+function createUnitSprite(unitType: UnitType, faction: Faction): THREE.Mesh {
+  const mesh = new THREE.Mesh(getUnitGeometry(unitType), getAtlasMaterial(faction));
   // Flach auf den Boden legen. Danach gilt: Canvas-x -> Welt +X und
   // Canvas-y (nach unten) -> Welt +Z, also unverspiegelte Draufsicht -
   // ein Sprite mit Fahrtrichtung nach Canvas-rechts (loader.ts) zeigt bei
@@ -103,10 +119,60 @@ function createSelectionRing(): THREE.Object3D {
   return ring;
 }
 
-export function createUnitMesh(unitType: UnitType): THREE.Group {
+// HP-Balken als Kamera-zugewandte Sprites (immer lesbar, egal wie die Kamera
+// gedreht ist). Beide Sprites sitzen am selben Weltpunkt auf der Drehachse
+// der Einheit - so wandert der Balken nicht mit, wenn die Einheit sich dreht.
+// Der Fuellstand wird in updateHpBar() ueber Breite + center.x geregelt, damit
+// der Balken nach links hin schrumpft statt symmetrisch zur Mitte.
+const HP_BAR_WIDTH = 1.1;
+const HP_BAR_HEIGHT = 0.14;
+
+const hpBackgroundMaterial = new THREE.SpriteMaterial({ color: 0x222222 });
+const hpFillMaterials: Record<Faction, THREE.SpriteMaterial> = {
+  player: new THREE.SpriteMaterial({ color: 0x33cc33 }),
+  enemy: new THREE.SpriteMaterial({ color: 0xdd3333 }),
+};
+
+function createHpBar(unitType: UnitType, faction: Faction): THREE.Object3D {
+  const barY = SPRITE_Y_OFFSET[unitType] + 1.1;
+
+  const background = new THREE.Sprite(hpBackgroundMaterial);
+  background.scale.set(HP_BAR_WIDTH, HP_BAR_HEIGHT, 1);
+  background.position.y = barY;
+
+  const fill = new THREE.Sprite(hpFillMaterials[faction]);
+  fill.name = 'hpFill';
+  fill.scale.set(HP_BAR_WIDTH, HP_BAR_HEIGHT, 1);
+  fill.position.y = barY;
+  // Beide Sprites liegen exakt gleich tief - renderOrder sorgt dafuer, dass
+  // die Fuellung zuverlaessig ueber dem Hintergrund gezeichnet wird.
+  fill.renderOrder = 1;
+
+  // Wie beim Auswahlring: der Balken soll keine Boden-/Einheitenklicks
+  // abfangen (THREE.Raycaster testet auch Sprites).
+  background.raycast = () => {};
+  fill.raycast = () => {};
+
+  const bar = new THREE.Group();
+  bar.add(background, fill);
+  return bar;
+}
+
+function updateHpBar(group: THREE.Object3D, hp: number, maxHp: number): void {
+  const fill = group.getObjectByName('hpFill') as THREE.Sprite | undefined;
+  if (!fill) return;
+  const fraction = Math.min(Math.max(hp / maxHp, 0.02), 1);
+  fill.scale.x = HP_BAR_WIDTH * fraction;
+  // center.x so waehlen, dass die linke Kante der Fuellung immer mit der
+  // linken Kante des Hintergrunds (Breite 1, center 0.5) buendig bleibt.
+  fill.center.x = 1 / (2 * fraction);
+}
+
+export function createUnitMesh(unitType: UnitType, faction: Faction): THREE.Group {
   const group = new THREE.Group();
-  group.add(createUnitSprite(unitType));
+  group.add(createUnitSprite(unitType, faction));
   group.add(createSelectionRing());
+  group.add(createHpBar(unitType, faction));
   return group;
 }
 
@@ -124,4 +190,5 @@ export function applySnapshot(object: THREE.Object3D, snapshot: EntitySnapshot, 
   object.position.y = terrainHeight;
   object.position.z = snapshot.y;
   object.rotation.y = -snapshot.heading;
+  updateHpBar(object, snapshot.hp, COMBAT_STATS[snapshot.unitType].maxHp);
 }

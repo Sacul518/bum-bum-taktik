@@ -17,6 +17,23 @@ export const UNIT_DOMAIN: Record<UnitType, Domain> = {
   plane: 'air',
 };
 
+// Kampfwerte pro Einheitentyp (docs/KONZEPT.md Abschnitt 9, Phase 2).
+// Reichweite in Kacheln, Feuerpause in Millisekunden. Startwerte fuers
+// Balancing - werden nach ersten Testgefechten angepasst.
+export interface CombatStats {
+  maxHp: number;
+  range: number;
+  damage: number;
+  cooldownMs: number;
+}
+
+export const COMBAT_STATS: Record<UnitType, CombatStats> = {
+  tank: { maxHp: 100, range: 6, damage: 25, cooldownMs: 2000 },
+  infantry: { maxHp: 60, range: 4, damage: 8, cooldownMs: 1000 },
+  boat: { maxHp: 120, range: 8, damage: 30, cooldownMs: 2500 },
+  plane: { maxHp: 80, range: 5, damage: 15, cooldownMs: 1500 },
+};
+
 // Schwellenwerte fuer den Hoehenwert e (-1..1) aus der Terrain-Generierung,
 // siehe docs/KONZEPT.md Abschnitt 3.
 export const ELEVATION_THRESHOLDS = {

@@ -10,11 +10,25 @@ export interface ServerHello {
   elevation: ArrayBuffer; // Hoehenwert -1..1 pro Kachel (Float32Array-Bytes)
 }
 
+// Ein Schuss, der in diesem Tick gefallen ist (Sofort-Treffer, der Schaden
+// ist bereits abgezogen). Positionen sind mit dabei, damit der Client die
+// Tracer-Linie auch dann zeichnen kann, wenn das Ziel im selben Tick
+// zerstoert wurde und nicht mehr in "entities" auftaucht.
+export interface ShotEvent {
+  attackerId: EntityId;
+  targetId: EntityId;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+}
+
 // Server -> Client, pro Tick
 export interface StateUpdate {
   type: 'state';
   tick: number;
   entities: EntitySnapshot[];
+  shots: ShotEvent[];
   visibleEnemyIds: EntityId[]; // Fog-of-War: nur was das Team gerade sieht
 }
 

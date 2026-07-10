@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { DEFAULT_SERVER_PORT, TICK_INTERVAL_MS } from '@bum-bum-taktik/shared';
-import type { EntitySnapshot } from '@bum-bum-taktik/shared';
+import type { EntitySnapshot, Faction } from '@bum-bum-taktik/shared';
 import {
   createCameraRig,
   updateCameraAspect,
@@ -14,6 +14,7 @@ import { createScene } from './render/scene.js';
 import { createTerrainMesh, sampleElevation } from './render/terrain.js';
 import { createUnitMesh, applySnapshot, setSelected, preloadUnitAtlas } from './render/units.js';
 import { createPathLine, updatePathLine } from './render/path.js';
+import { spawnTracer, updateTracers } from './render/tracers.js';
 import { connectToServer, sendCommand } from './net/client.js';
 import { resolveCameraInput } from './input/hotkeys.js';
 
@@ -85,6 +86,24 @@ const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVE
       const entities = new Map(message.entities.map((entity) => [entity.id, entity]));
       previousSnapshot = latestSnapshot;
       latestSnapshot = { receivedAt: performance.now(), entities };
+
+      // Zerstoerte Einheiten (nicht mehr im Snapshot) aus der Szene entfernen.
+      for (const [id, mesh] of unitMeshes) {
+        if (entities.has(id)) continue;
+        scene.remove(mesh);
+        unitMeshes.delete(id);
+        selectedUnitIds.delete(id);
+      }
+
+      for (const shot of message.shots) {
+        if (!terrainElevation) break;
+        spawnTracer(
+          scene,
+          shot,
+          sampleElevation(shot.fromX, shot.fromY, mapWidth, mapHeight, terrainElevation),
+          sampleElevation(shot.toX, shot.toY, mapWidth, mapHeight, terrainElevation),
+        );
+      }
     }
   },
 });
@@ -228,8 +247,17 @@ renderer.domElement.addEventListener('pointerup', (event) => {
   if (!drag.moved) {
     const clickedUnitId = raycastUnit(event.clientX, event.clientY);
     if (clickedUnitId) {
-      selectedUnitIds.clear();
-      selectedUnitIds.add(clickedUnitId);
+      // Klick auf einen Feind = Angriffsbefehl fuer die Auswahl; Klick auf
+      // eine eigene Einheit = Auswahl wechseln. Feinde sind nicht selektierbar.
+      const clickedFaction = unitMeshes.get(clickedUnitId)?.userData.faction as Faction | undefined;
+      if (clickedFaction === 'enemy') {
+        for (const unitId of selectedUnitIds) {
+          sendCommand(socket, { type: 'attack', unitId, targetId: clickedUnitId });
+        }
+      } else {
+        selectedUnitIds.clear();
+        selectedUnitIds.add(clickedUnitId);
+      }
     } else if (drag.anchorWorld && selectedUnitIds.size > 0) {
       sendCommand(socket, {
         type: 'move',
@@ -331,8 +359,9 @@ function render(): void {
     for (const [id, snapshot] of latestSnapshot.entities) {
       let mesh = unitMeshes.get(id);
       if (!mesh) {
-        mesh = createUnitMesh(snapshot.unitType);
+        mesh = createUnitMesh(snapshot.unitType, snapshot.faction);
         mesh.userData.unitId = id;
+        mesh.userData.faction = snapshot.faction;
         unitMeshes.set(id, mesh);
         scene.add(mesh);
       }
@@ -352,6 +381,7 @@ function render(): void {
   }
 
   updatePathLine(pathLine, selectedPathPoints);
+  updateTracers(now);
 
   renderer.render(scene, camera);
 }

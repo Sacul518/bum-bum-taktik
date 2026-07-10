@@ -9,7 +9,7 @@ import {
   type ServerHello,
   type StateUpdate,
 } from '@bum-bum-taktik/shared';
-import { advanceUnits, initUnits, setUnitTargets } from './gameLoop.js';
+import { advanceUnits, initUnits, setAttackTarget, setUnitTargets } from './gameLoop.js';
 
 // Platzhalter-Kartengroesse; die endgueltige Groesse wird nach Performance-
 // Tests auf echter Hardware festgelegt (siehe docs/KONZEPT.md "Offene Punkte").
@@ -57,6 +57,8 @@ wss.on('connection', (socket) => {
       const command = JSON.parse(data.toString()) as ClientCommand;
       if (command.type === 'move') {
         setUnitTargets(command.unitIds, command.target[0], command.target[1]);
+      } else if (command.type === 'attack') {
+        setAttackTarget(command.unitId, command.targetId);
       }
     } catch (err) {
       console.error('Ungueltiger Client-Befehl:', err);
@@ -77,10 +79,12 @@ wss.on('connection', (socket) => {
 
 setInterval(() => {
   tick += 1;
+  const { entities, shots } = advanceUnits();
   const state: StateUpdate = {
     type: 'state',
     tick,
-    entities: advanceUnits(),
+    entities,
+    shots,
     visibleEnemyIds: [],
   };
   const payload = encodeServerMessage(state);

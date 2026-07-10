@@ -272,9 +272,16 @@ Diese Aufteilung folgt bewusst den Ordnergrenzen, damit zwei Subagenten möglich
 - Sprite-Rendering mit den CC0-Assets, Textur-Atlas
 
 **Phase 2 — Gefecht & Mehrspieler-Sync**
-- Kampfauflösung, Projektile, Treffer-Berechnung
+- Kampfauflösung, Projektile, Treffer-Berechnung ✅ *(siehe Kasten unten)*
 - Tick-Rate/Interpolation auf echter Hardware (6 iPads gleichzeitig) feinjustieren
 - Fog of War, Basis-Radar
+
+> **Kampfauflösung — entschieden & umgesetzt (2026-07-10):**
+> - **Ziel-Logik:** Auto-Feuer auf den nächsten Feind in Reichweite (beide Fraktionen), zusätzlich expliziter Angriffsbefehl per Klick auf einen Feind — die Einheit verfolgt das Ziel und feuert ab Reichweite. Bewegungsbefehl bricht den Angriff ab.
+> - **Treffer-Modell:** Sofort-Treffer ("Hitscan") im Server-Tick statt echter Projektile mit Flugzeit; der Client zeichnet pro Schuss nur eine kurze Tracer-Linie (`ShotEvent` im `StateUpdate`). Echte Projektile bleiben als spätere Ausbaustufe möglich, ohne das Protokoll umzubauen.
+> - **Gleichzeitige Auflösung:** Alle Schüsse eines Ticks werden erst gesammelt, dann Schaden abgezogen — niemand stirbt, bevor er im selben Tick noch zurückschießen konnte.
+> - **Werte:** HP/Reichweite/Schaden/Feuerpause pro Einheitentyp zentral in `shared/constants.ts` (`COMBAT_STATS`).
+> - **Fraktionen:** `player` vs. `enemy` (Koop, Abschnitt 0). Server ignoriert Befehle an Feind-Einheiten und Friendly Fire.
 
 **Phase 3 — Erweiterte Features**
 - Sonar (U-Boote), elektronische Kampfführung/Jamming
