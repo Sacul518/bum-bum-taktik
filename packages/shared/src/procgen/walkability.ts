@@ -7,8 +7,11 @@ import { TERRAIN_TYPES, type TerrainMap, type TerrainType } from './terrain.js';
 // Infanterie ok" wird hier NICHT abgebildet - dafuer braucht es spaeter eine
 // einheitentyp-spezifische Bewegungskosten-Schicht oben auf diesem Raster,
 // sobald Pathfinding pro Einheitentyp ansteht.
-const LAND_WALKABLE = new Set<TerrainType>(['beach', 'plains', 'hills', 'mountains']);
-const WATER_WALKABLE = new Set<TerrainType>(['deepWater', 'shallowWater']);
+// Sand verhaelt sich wie Ebene, Schnee wie Berge. Die Bruecke ist bewusst in
+// BEIDEN Rastern begehbar: Landeinheiten fahren drueber, Schiffe drunter
+// durch - moeglich, weil die Raster pro Domain getrennt sind.
+const LAND_WALKABLE = new Set<TerrainType>(['beach', 'plains', 'hills', 'mountains', 'sand', 'snow', 'bridge']);
+const WATER_WALKABLE = new Set<TerrainType>(['deepWater', 'shallowWater', 'bridge']);
 
 export interface WalkabilityGrids {
   width: number;

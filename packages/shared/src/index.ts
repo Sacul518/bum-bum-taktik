@@ -1,7 +1,9 @@
 export * from './types.js';
 export * from './protocol.js';
 export * from './constants.js';
+export * from './missions.js';
 export * from './procgen/terrain.js';
+export * from './procgen/presets.js';
 export * from './procgen/walkability.js';
 export * from './pathfinding/astar.js';
 

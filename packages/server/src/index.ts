@@ -1,30 +1,31 @@
 import { WebSocketServer } from 'ws';
 import {
+  DEFAULT_PRESET_ID,
   DEFAULT_SERVER_PORT,
+  MAP_PRESETS,
   TICK_INTERVAL_MS,
   computeWalkability,
   encodeServerMessage,
-  generateTerrain,
+  generatePresetMap,
+  isMapPresetId,
   type ClientCommand,
   type ServerHello,
   type StateUpdate,
 } from '@bum-bum-taktik/shared';
 import { advanceUnits, initUnits, setAttackTarget, setUnitTargets } from './gameLoop.js';
 
-// 500x500 = 25-fache Flaeche der urspruenglichen 100x100-Testkarte; die
-// endgueltige Groesse wird nach Performance-Tests auf echter Hardware
-// festgelegt (siehe docs/KONZEPT.md "Offene Punkte").
-const MAP_WIDTH = 500;
-const MAP_HEIGHT = 500;
+// Start-Preset per Umgebungsvariable waehlbar (MAP_PRESET=meer npm run dev),
+// solange die Auswahl per Terminal-Befehl (docs/KONZEPT.md Abschnitt 3.1/6)
+// noch nicht verdrahtet ist. Default: die bisherige Plains-Karte.
+const presetEnv = process.env.MAP_PRESET ?? DEFAULT_PRESET_ID;
+if (!isMapPresetId(presetEnv)) {
+  console.error(`Unbekanntes MAP_PRESET "${presetEnv}" - verfuegbar: ${Object.keys(MAP_PRESETS).join(', ')}`);
+  process.exit(1);
+}
+const preset = MAP_PRESETS[presetEnv];
 
-// Seed 1 liefert bei dieser Kartengroesse eine gute Mischung: mehrere grosse
-// Kontinente, zwei Ozeanbecken, Gebirgszuege (~52% Land) - per ASCII-Vorschau
-// geprueft (packages/shared: npm run preview -- 500 500 1). Wird spaeter pro
-// Match zufaellig gewaehlt statt fest verdrahtet.
-const TERRAIN_SEED = 1;
-
-const map = generateTerrain(MAP_WIDTH, MAP_HEIGHT, { seed: TERRAIN_SEED });
-console.log(`Karte generiert: ${MAP_WIDTH}x${MAP_HEIGHT}, Seed ${TERRAIN_SEED}`);
+const map = generatePresetMap(preset.id);
+console.log(`Karte generiert: Preset "${preset.name}" (${map.width}x${map.height}, Seed ${preset.gen.seed ?? 1})`);
 
 const walkability = computeWalkability(map);
 initUnits(walkability);
@@ -46,8 +47,8 @@ wss.on('connection', (socket) => {
   const hello: ServerHello = {
     type: 'hello',
     playerId,
-    mapWidth: MAP_WIDTH,
-    mapHeight: MAP_HEIGHT,
+    mapWidth: map.width,
+    mapHeight: map.height,
     terrain: map.terrain.buffer as ArrayBuffer,
     elevation: map.elevation.buffer as ArrayBuffer,
   };

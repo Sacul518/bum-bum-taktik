@@ -111,6 +111,23 @@ Aus diesen Schwellenwerten entstehen **drei separate Begehbarkeits-Raster** (ein
 
 **Bewusst nicht in der ersten Version:** hydraulische Erosion, Flusssimulation, Höhlensysteme. Das sind reizvolle spätere Erweiterungen, aber für ein funktionierendes taktisches Schlachtfeld nicht nötig — die Elevation+Moisture-Schwellenwert-Methode reicht für glaubwürdige Inseln/Flüsse/Gebirge.
 
+### 3.1 Map-Presets ("Regionen") — entschieden & umgesetzt (2026-07-11)
+
+Statt einer einzigen Karte gibt es benannte Parametersätze für `generateTerrain` in `shared/src/procgen/presets.ts` (`MAP_PRESETS`). Ein Preset legt Kartengröße, Seed und Generator-Optionen fest; die Zahlenwerte sind per ASCII-Vorschau getunt (`npm run preview -w @bum-bum-taktik/shared -- <preset>`).
+
+| Preset | Größe | Idee | Technik |
+|---|---|---|---|
+| `wueste` | 500×500 | Sand dominiert, vereinzelte Oasen und Felsen | Wassergrenzen ganz tief (nur tiefste Täler werden Oasen); Ebenen mit Feuchtigkeit unter `sandMoistureMax` werden zu **Sand** |
+| `gebirge` | 500×500 | Ausgeprägte Gebirgszüge, Schnee auf den Gipfeln | **Ridged-Noise** (gespiegelter Betrag → scharfe Kämme); Kacheln ab `snowMin` werden zu **Schnee** |
+| `plains` | 500×500 | Die bisherige Standardkarte | Nur Default-Parameter, Seed 1 — Look unverändert |
+| `meer` | 500×500 | Offenes Meer; zwei größere Inseln mit Brücke, kompakt in der Kartenmitte | Landgrenze hoch + grobes Noise; `islandRegion`: Land entsteht nur im zentralen **100×100-Quadrat**, außerhalb sinkt der Meeresboden sanft auf Tiefwasser ab; **Post-Processing** (`bridge.ts`): Flood-Fill findet die zwei größten Inseln, nächstgelegenes Küstenpaar wird mit einer geraden, 2 Kacheln breiten Brücke verbunden |
+
+Dafür wurden drei Terrain-Typen ergänzt (nur hinten an `TERRAIN_TYPES` angehängt, damit sich bestehende Indizes nicht verschieben): `sand` (begehbar wie Ebene), `snow` (wie Berge), `bridge`. Die Brücke ist bewusst in **beiden** Begehbarkeits-Rastern frei — Landeinheiten fahren drüber, Schiffe drunter durch; möglich, weil die Raster pro Domain getrennt sind (Abschnitt 3).
+
+### 3.2 Missionen — Minimaldefinition (2026-07-11)
+
+Eine **Mission** gehört zu genau einer Region (= Map-Preset) und ist vorerst nur: `id`, `name`, `description` und eine **Startaufstellung** (Liste aus Einheitentyp + Fraktion + Anzahl). Definiert als Daten in `shared/src/missions.ts` (`MISSIONS`, `missionsForRegion`). Die Spawn-*Positionen* bleiben Server-Logik (Ring-Suche um die Kartenmitte). Bewusst noch **nicht** definiert: Siegbedingungen, Skript-Ereignisse, Belohnungen — das kommt, sobald die erste Mission wirklich spielbar ist. Ausgewählt werden Region und Mission über das In-Game-Terminal (Abschnitt 6).
+
 ---
 
 ## 4. Rendering-Architektur (Three.js)
@@ -153,6 +170,8 @@ Typischer Ablauf: Spieler drückt Hotkey `1` (wählt Einheitengruppe 1) → tipp
 ## 6. In-Game-Terminal (CLI)
 
 **Empfehlung: ein eigenes, schlankes Terminal-Widget bauen, nicht xterm.js einbinden.** xterm.js ist für einen "echten" Terminal-Emulator (mit ANSI-Farben, PTY-Anbindung) gedacht — hier reicht ein einfaches Scrollback-`<div>` + ein `<input>`-Feld, das per Hotkey (z. B. die Taste `` ` ``, unmodifiziert, kollidiert mit nichts) ein-/ausgeblendet wird. Das ist für ein Einsteiger-Team leichter zu warten und zu erweitern.
+
+**Optik (festgelegt 2026-07-11):** bewusst oldschool — 90er-Retro-Terminal: schwarzer (leicht transparenter) Hintergrund, grüner Monospace-Text, Block-Cursor. Beim Spielstart ist das Terminal geöffnet und fordert zur Regionswahl auf (Abschnitt 3.1/3.2).
 
 **Befehls-Registry**, damit neue Befehle unabhängig voneinander (auch von verschiedenen Subagenten) hinzugefügt werden können, ohne dieselbe Datei zu bearbeiten:
 

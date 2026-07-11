@@ -10,6 +10,9 @@ const TERRAIN_COLORS: Record<TerrainType, THREE.Color> = {
   plains: new THREE.Color(0x4f7942),
   hills: new THREE.Color(0x7c6a46),
   mountains: new THREE.Color(0x9a9a9a),
+  sand: new THREE.Color(0xd9c27e),
+  snow: new THREE.Color(0xf2f4f5),
+  bridge: new THREE.Color(0x6e6e78),
 };
 
 // Elevation (-1..1) auf Welteinheiten skaliert, damit Huegel/Berge sichtbar
