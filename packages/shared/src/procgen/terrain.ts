@@ -84,11 +84,14 @@ function classifyElevation(elevation: number): number {
 }
 
 export function generateTerrain(width: number, height: number, options: TerrainGenOptions = {}): TerrainMap {
+  // elevationScale 0.0035 ist auf die 500x500-Karte abgestimmt: liefert
+  // wenige grosse Kontinente und zusammenhaengende Ozeane statt vieler
+  // kleiner Inseln (getunt per Downsample-Vorschau, Seed 1: ~52% Land).
   const {
     seed = 1,
     elevationOctaves = 5,
     moistureOctaves = 3,
-    elevationScale = 0.01,
+    elevationScale = 0.0035,
     moistureScale = 0.02,
   } = options;
 

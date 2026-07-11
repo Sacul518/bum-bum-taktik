@@ -4,12 +4,12 @@ import * as THREE from 'three';
 // orthografischen Kamera, diesen Wert zu aendern - NICHT die Kamera per
 // Dolly naeher heranzufahren (siehe docs/KONZEPT.md Abschnitt 4).
 const DEFAULT_VIEW_SIZE = 40;
-// Karte ist 100x100 Weltkacheln (packages/server/src/index.ts). Grenzen so
+// Karte ist 500x500 Weltkacheln (packages/server/src/index.ts). Grenzen so
 // gewaehlt, dass man sowohl nah an einzelne Einheiten heran (10) als auch
-// nahe an die volle Kartenbreite heraus (100) zoomen kann, ohne sie zu
+// bis zur vollen Kartenbreite heraus (500) zoomen kann, ohne sie zu
 // sprengen.
 const MIN_VIEW_SIZE = 10;
-const MAX_VIEW_SIZE = 100;
+const MAX_VIEW_SIZE = 500;
 
 const DEFAULT_DISTANCE = Math.sqrt(3) * 50; // Betrag des urspruenglichen Versatzes (50,50,50)
 const DEFAULT_AZIMUTH = Math.PI / 4; // 45°, wie zuvor die feste Position
@@ -37,7 +37,11 @@ export interface CameraRig {
 }
 
 export function createCameraRig(aspect: number): CameraRig {
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
+  // near ist bewusst negativ: bei einer orthografischen Kamera ist das
+  // erlaubt und noetig, weil beim weiten Herauszoomen (viewSize > ~120)
+  // Bodenflaechen am unteren Bildrand geometrisch HINTER der Kameraposition
+  // liegen - mit near >= 0 wuerden sie von der Near-Plane weggeschnitten.
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1000, 1000);
 
   const rig: CameraRig = {
     camera,

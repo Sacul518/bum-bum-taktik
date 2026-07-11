@@ -11,15 +11,16 @@ import {
 } from '@bum-bum-taktik/shared';
 import { advanceUnits, initUnits, setAttackTarget, setUnitTargets } from './gameLoop.js';
 
-// Platzhalter-Kartengroesse; die endgueltige Groesse wird nach Performance-
-// Tests auf echter Hardware festgelegt (siehe docs/KONZEPT.md "Offene Punkte").
-const MAP_WIDTH = 100;
-const MAP_HEIGHT = 100;
+// 500x500 = 25-fache Flaeche der urspruenglichen 100x100-Testkarte; die
+// endgueltige Groesse wird nach Performance-Tests auf echter Hardware
+// festgelegt (siehe docs/KONZEPT.md "Offene Punkte").
+const MAP_WIDTH = 500;
+const MAP_HEIGHT = 500;
 
-// Seed 1 liefert bei dieser Kartengroesse eine gute Mischung aus allen
-// Terrain-Typen (Wasser, Ebene, Huegel, Berge) - per ASCII-Vorschau geprueft
-// (packages/shared: npm run preview -- 100 100 1). Wird spaeter pro Match
-// zufaellig gewaehlt statt fest verdrahtet.
+// Seed 1 liefert bei dieser Kartengroesse eine gute Mischung: mehrere grosse
+// Kontinente, zwei Ozeanbecken, Gebirgszuege (~52% Land) - per ASCII-Vorschau
+// geprueft (packages/shared: npm run preview -- 500 500 1). Wird spaeter pro
+// Match zufaellig gewaehlt statt fest verdrahtet.
 const TERRAIN_SEED = 1;
 
 const map = generateTerrain(MAP_WIDTH, MAP_HEIGHT, { seed: TERRAIN_SEED });
