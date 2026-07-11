@@ -34,6 +34,23 @@ export const COMBAT_STATS: Record<UnitType, CombatStats> = {
   plane: { maxHp: 80, range: 5, damage: 15, cooldownMs: 1500 },
 };
 
+// Sichtweite in Kacheln pro Einheitentyp - Grundlage fuer Fog of War
+// (docs/KONZEPT.md Abschnitt 9, Phase 2): der Server schickt Feind-Einheiten
+// nur, wenn mindestens eine Spieler-Einheit sie in Sichtweite hat. Der
+// Huegel-Sichtbonus aus Abschnitt 3 kommt spaeter als Aufschlag obendrauf.
+export const VISION_RANGE: Record<UnitType, number> = {
+  tank: 10,
+  infantry: 8,
+  boat: 12,
+  plane: 16,
+};
+
+// Gegner-KI: ab dieser Distanz (Kacheln) nimmt eine Feind-Einheit die
+// naechste Spieler-Einheit ins Visier und verfolgt sie. Bewusst groesser als
+// jede Waffen-Reichweite, aber kleiner als die Spieler-Sichtweiten - wer
+// aufklaert, sieht den Feind, bevor der angreift.
+export const ENEMY_AGGRO_RANGE = 14;
+
 // Schwellenwerte fuer den Hoehenwert e (-1..1) aus der Terrain-Generierung,
 // siehe docs/KONZEPT.md Abschnitt 3.
 export const ELEVATION_THRESHOLDS = {

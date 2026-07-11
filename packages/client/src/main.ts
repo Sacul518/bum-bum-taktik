@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DEFAULT_SERVER_PORT, MAP_PRESETS, TICK_INTERVAL_MS } from '@bum-bum-taktik/shared';
+import { DEFAULT_SERVER_PORT, MAP_PRESETS, TICK_INTERVAL_MS, getMission } from '@bum-bum-taktik/shared';
 import type { EntitySnapshot, Faction } from '@bum-bum-taktik/shared';
 import {
   createCameraRig,
@@ -19,7 +19,7 @@ import { spawnTracer, updateTracers } from './render/tracers.js';
 import { connectToServer, sendCommand } from './net/client.js';
 import { resolveCameraInput } from './input/hotkeys.js';
 import { createTerminal } from './terminal/Terminal.js';
-import { bindGameCommands, getCurrentPreset, setCurrentPreset } from './terminal/gameBridge.js';
+import { bindGameCommands, bindSelection, getCurrentPreset, setCurrentPreset } from './terminal/gameBridge.js';
 import { formatMissionList } from './terminal/commands/missions.js';
 import './terminal/commands/index.js';
 
@@ -97,11 +97,16 @@ const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVE
       // neue Region + ihre Missionen anzeigen (Abschnitt 3.1/3.2).
       const previousPreset = getCurrentPreset();
       setCurrentPreset(message.preset);
+      const mission = message.missionId ? getMission(message.missionId) : undefined;
       if (previousPreset === null) {
         terminal.print(`Verbunden - aktuelle Region: ${MAP_PRESETS[message.preset].name}`);
         terminal.print('Waehle deine Region: "map list" zeigt alle, "map select <id>" wechselt.');
         terminal.print('"missions" zeigt die Missionen der aktuellen Region.');
         terminal.print('');
+      } else if (mission) {
+        terminal.print('');
+        terminal.print(`Mission gestartet: ${mission.name} (Region ${MAP_PRESETS[message.preset].name})`);
+        terminal.print(mission.description);
       } else {
         terminal.print('');
         terminal.print(`Region gewechselt: ${MAP_PRESETS[message.preset].name}`);
@@ -122,7 +127,7 @@ const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVE
       selectedUnitIds.clear();
       previousSnapshot = null;
       latestSnapshot = null;
-      resetCamera(cameraRig);
+      resetCamera(cameraRig, MAP_PRESETS[message.preset].startViewSize);
 
       const terrainTypes = new Uint8Array(message.terrain);
       mapWidth = message.mapWidth;
@@ -159,9 +164,21 @@ const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVE
   },
 });
 
-// Terminal-Befehle (map select, spaeter mission start) schicken ihre
-// typisierten Befehle ueber dieselbe Verbindung wie Maus-Befehle.
+// Terminal-Befehle (map select, mission start) schicken ihre typisierten
+// Befehle ueber dieselbe Verbindung wie Maus-Befehle.
 bindGameCommands((command) => sendCommand(socket, command));
+
+// Auswahl-Anbindung fuer die select/units-Terminalbefehle (Abschnitt 5.3):
+// dieselbe Auswahl wie die Klick-Selektion, damit sich beide Wege nicht
+// widersprechen.
+bindSelection({
+  getUnits: () => (latestSnapshot ? Array.from(latestSnapshot.entities.values()) : []),
+  getSelection: () => Array.from(selectedUnitIds),
+  setSelection: (ids) => {
+    selectedUnitIds.clear();
+    for (const id of ids) selectedUnitIds.add(id);
+  },
+});
 
 // Kamera ist die zentrale Steuerung (docs/KONZEPT.md Abschnitt 5.1): sie wird
 // per Touch-/Maus-Ziehen oder WASD geschwenkt. Ein Tippen ohne nennenswerte

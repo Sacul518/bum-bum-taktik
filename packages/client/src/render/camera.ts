@@ -93,12 +93,13 @@ function updateCameraTransform(rig: CameraRig): void {
 
 // Zurueck auf die Startansicht (Kartenmitte, Standard-Zoom und -Winkel):
 // nach einem Kartenwechsel ergibt die alte Kameraposition auf der neuen
-// Karte keinen Sinn mehr.
-export function resetCamera(rig: CameraRig): void {
+// Karte keinen Sinn mehr. viewSize erlaubt Karten einen eigenen Start-Zoom
+// (MapPreset.startViewSize), z. B. weiter draussen fuer die Meer-Inseln.
+export function resetCamera(rig: CameraRig, viewSize = DEFAULT_VIEW_SIZE): void {
   rig.target.set(0, 0, 0);
   rig.azimuth = DEFAULT_AZIMUTH;
   rig.tilt = DEFAULT_TILT;
-  rig.viewSize = DEFAULT_VIEW_SIZE;
+  rig.viewSize = THREE.MathUtils.clamp(viewSize, MIN_VIEW_SIZE, MAX_VIEW_SIZE);
   updateCameraFrustum(rig);
   updateCameraTransform(rig);
 }

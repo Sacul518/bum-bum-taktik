@@ -59,6 +59,9 @@ function buildHello(playerId: string): ServerHello {
     type: 'hello',
     playerId,
     preset: currentPresetId,
+    // Noch keine Missionsverwaltung im Server - kommt mit dem
+    // startMission-Handler (docs/KONZEPT.md Abschnitt 3.2).
+    missionId: null,
     mapWidth: map.width,
     mapHeight: map.height,
     terrain: map.terrain.buffer as ArrayBuffer,

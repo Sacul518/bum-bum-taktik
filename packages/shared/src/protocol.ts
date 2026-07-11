@@ -8,6 +8,8 @@ export interface ServerHello {
   type: 'hello';
   playerId: PlayerId;
   preset: MapPresetId;
+  /** Aktive Mission (docs/KONZEPT.md Abschnitt 3.2) oder null = freie Aufstellung. */
+  missionId: string | null;
   mapWidth: number;
   mapHeight: number;
   terrain: ArrayBuffer; // Terrain-Typ-Index pro Kachel (Uint8Array-Bytes)
@@ -106,4 +108,13 @@ export interface SelectMapCommand {
   preset: MapPresetId;
 }
 
-export type ClientCommand = MoveCommand | AttackCommand | TerminalCommand | SelectMapCommand;
+// Missionsstart uebers Terminal (docs/KONZEPT.md Abschnitt 3.2): der Server
+// wechselt auf die Region der Mission und spawnt die Startaufstellung.
+// missionId ist bewusst string (nicht Literal-Union): kommt als JSON von
+// aussen, der Server prueft zur Laufzeit gegen MISSIONS.
+export interface StartMissionCommand {
+  type: 'startMission';
+  missionId: string;
+}
+
+export type ClientCommand = MoveCommand | AttackCommand | TerminalCommand | SelectMapCommand | StartMissionCommand;

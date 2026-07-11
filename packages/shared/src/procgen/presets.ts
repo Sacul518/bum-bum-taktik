@@ -17,6 +17,12 @@ export interface MapPreset {
   gen: TerrainGenOptions;
   /** Meer-Preset: nach der Generierung die zwei groessten Inseln verbinden. */
   bridge?: boolean;
+  /**
+   * Start-Zoom des Clients (sichtbare Frustum-Hoehe in Kacheln) nach dem
+   * Laden dieser Karte. Ohne Angabe gilt der Standard-Zoom des Clients.
+   * Gedacht fuer Karten, deren Motiv sonst nicht in die Startansicht passt.
+   */
+  startViewSize?: number;
 }
 
 export const MAP_PRESETS: Record<MapPresetId, MapPreset> = {
@@ -76,6 +82,9 @@ export const MAP_PRESETS: Record<MapPresetId, MapPreset> = {
       islandRegion: { size: 100, falloff: 24 },
     },
     bridge: true,
+    // Beide Inseln samt Bruecke liegen im zentralen 100x100-Quadrat - mit
+    // dem Standard-Zoom (40) saehe man nach dem Kartenwechsel nur eine Insel.
+    startViewSize: 130,
   },
 };
 

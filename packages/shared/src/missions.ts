@@ -74,3 +74,8 @@ export const MISSIONS: MissionDef[] = [
 export function missionsForRegion(region: MapPresetId): MissionDef[] {
   return MISSIONS.filter((mission) => mission.region === region);
 }
+
+// Laufzeit-Lookup fuer missionId-Strings von aussen (startMission-Befehl).
+export function getMission(missionId: string): MissionDef | undefined {
+  return MISSIONS.find((mission) => mission.id === missionId);
+}
