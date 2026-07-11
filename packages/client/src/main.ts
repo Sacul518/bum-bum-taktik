@@ -17,6 +17,8 @@ import { createPathLine, updatePathLine } from './render/path.js';
 import { spawnTracer, updateTracers } from './render/tracers.js';
 import { connectToServer, sendCommand } from './net/client.js';
 import { resolveCameraInput } from './input/hotkeys.js';
+import { createTerminal } from './terminal/Terminal.js';
+import './terminal/commands/index.js';
 
 const app = document.getElementById('app');
 if (!app) throw new Error('#app fehlt in index.html');
@@ -28,6 +30,16 @@ app.appendChild(renderer.domElement);
 const scene = createScene();
 const cameraRig = createCameraRig(window.innerWidth / window.innerHeight);
 const camera = cameraRig.camera;
+
+// In-Game-Terminal (docs/KONZEPT.md Abschnitt 6): beim Spielstart geoeffnet,
+// Backtick-Taste (bzw. ^ auf deutschem Layout) blendet es ein/aus.
+const terminal = createTerminal(document.body);
+terminal.print('BUM BUM TAKTIK TERMINAL v0.1');
+terminal.print('');
+terminal.print("Tippe 'help' fuer alle Befehle, 'map list' fuer die Regionen.");
+terminal.print('Taste ^ (neben der 1) blendet das Terminal ein/aus, Escape schliesst.');
+terminal.print('');
+terminal.open();
 
 const pathLine = createPathLine();
 scene.add(pathLine);
@@ -284,13 +296,22 @@ renderer.domElement.addEventListener('pointercancel', (event) => {
 // Tastatur-Kamerasteuerung fuer Tests ohne Touch-Geraet: WASD schwenkt,
 // Q/E dreht, R/F neigt. Nur unmodifizierte Tasten (docs/KONZEPT.md
 // Abschnitt 5.2), Zuordnung Taste->Achse steckt in input/hotkeys.ts.
-// Terminal-Fokus-Schutz kommt erst mit dem Terminal-Widget in Phase 3.
+// Fokus-Regel Abschnitt 5.2: solange das Terminal-Eingabefeld fokussiert
+// ist, sind Tasten Terminal-Eingabe und KEINE Spiel-Hotkeys. pressedKeys
+// wird dabei geleert, sonst bliebe eine beim Fokuswechsel gehaltene Taste
+// fuer immer "gedrueckt" (kein keyup mehr fuer das Spiel).
 const CAMERA_PAN_SPEED = 20; // Welteinheiten pro Sekunde
 const CAMERA_ROTATE_SPEED = 1.2; // rad/s
 const CAMERA_TILT_SPEED = 1.0; // rad/s
 const pressedKeys = new Set<string>();
 
-window.addEventListener('keydown', (event) => pressedKeys.add(event.key.toLowerCase()));
+window.addEventListener('keydown', (event) => {
+  if (terminal.hasFocus()) {
+    pressedKeys.clear();
+    return;
+  }
+  pressedKeys.add(event.key.toLowerCase());
+});
 window.addEventListener('keyup', (event) => pressedKeys.delete(event.key.toLowerCase()));
 window.addEventListener('blur', () => pressedKeys.clear());
 
