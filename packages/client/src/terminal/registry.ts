@@ -5,6 +5,8 @@
 export interface TerminalContext {
   print: (text: string) => void;
   clear: () => void;
+  /** Schliesst das Terminal-Fenster (fuer den exit-Befehl). */
+  close: () => void;
 }
 
 export type CommandHandler = (args: string[], ctx: TerminalContext) => string | Promise<string>;

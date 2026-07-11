@@ -3,4 +3,6 @@
 // ergaenzen, sonst nichts.
 import './help.js';
 import './clear.js';
+import './exit.js';
 import './map.js';
+import './missions.js';

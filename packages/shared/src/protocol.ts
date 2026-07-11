@@ -1,9 +1,13 @@
 import type { EntityId, EntitySnapshot, PlayerId } from './types.js';
+import type { MapPresetId } from './procgen/presets.js';
 
-// Server -> Client, einmalig beim Verbindungsaufbau
+// Server -> Client, beim Verbindungsaufbau und erneut nach jedem
+// Kartenwechsel (selectMap) - der Client behandelt jedes hello als
+// kompletten Neuaufbau der Welt.
 export interface ServerHello {
   type: 'hello';
   playerId: PlayerId;
+  preset: MapPresetId;
   mapWidth: number;
   mapHeight: number;
   terrain: ArrayBuffer; // Terrain-Typ-Index pro Kachel (Uint8Array-Bytes)
@@ -94,4 +98,12 @@ export interface TerminalCommand {
   raw: string;
 }
 
-export type ClientCommand = MoveCommand | AttackCommand | TerminalCommand;
+// Regionswahl uebers Terminal (docs/KONZEPT.md Abschnitt 3.1): eigener
+// typisierter Befehl statt des rohen terminalCmd-Strings, damit der Server
+// keine Terminal-Syntax parsen muss.
+export interface SelectMapCommand {
+  type: 'selectMap';
+  preset: MapPresetId;
+}
+
+export type ClientCommand = MoveCommand | AttackCommand | TerminalCommand | SelectMapCommand;

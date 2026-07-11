@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { DEFAULT_SERVER_PORT, TICK_INTERVAL_MS } from '@bum-bum-taktik/shared';
+import { DEFAULT_SERVER_PORT, MAP_PRESETS, TICK_INTERVAL_MS } from '@bum-bum-taktik/shared';
 import type { EntitySnapshot, Faction } from '@bum-bum-taktik/shared';
 import {
   createCameraRig,
   updateCameraAspect,
   panCamera,
+  resetCamera,
   rotateCamera,
   tiltCamera,
   zoomCamera,
@@ -18,6 +19,8 @@ import { spawnTracer, updateTracers } from './render/tracers.js';
 import { connectToServer, sendCommand } from './net/client.js';
 import { resolveCameraInput } from './input/hotkeys.js';
 import { createTerminal } from './terminal/Terminal.js';
+import { bindGameCommands, getCurrentPreset, setCurrentPreset } from './terminal/gameBridge.js';
+import { formatMissionList } from './terminal/commands/missions.js';
 import './terminal/commands/index.js';
 
 const app = document.getElementById('app');
@@ -32,12 +35,12 @@ const cameraRig = createCameraRig(window.innerWidth / window.innerHeight);
 const camera = cameraRig.camera;
 
 // In-Game-Terminal (docs/KONZEPT.md Abschnitt 6): beim Spielstart geoeffnet,
-// Backtick-Taste (bzw. ^ auf deutschem Layout) blendet es ein/aus.
+// danach ueber den ">_"-Button am linken Rand ein-/ausblendbar.
 const terminal = createTerminal(document.body);
 terminal.print('BUM BUM TAKTIK TERMINAL v0.1');
 terminal.print('');
 terminal.print("Tippe 'help' fuer alle Befehle, 'map list' fuer die Regionen.");
-terminal.print('Taste ^ (neben der 1) blendet das Terminal ein/aus, Escape schliesst.');
+terminal.print('Der >_-Button am linken Rand blendet das Terminal ein/aus, Escape schliesst.');
 terminal.print('');
 terminal.open();
 
@@ -73,6 +76,9 @@ const selectedUnitIds = new Set<string>();
 let terrainElevation: Float32Array | null = null;
 let mapWidth = 0;
 let mapHeight = 0;
+// Das aktuelle Terrain-Mesh wird gemerkt, damit es beim naechsten hello
+// (Kartenwechsel) wieder aus der Szene entfernt werden kann.
+let terrainMesh: THREE.Mesh | null = null;
 
 // Einheiten-Atlas laedt echte Sprite-Bilder (render/loader.ts) und ist daher
 // asynchron - erst awaiten, dann verbinden, damit beim Eintreffen der ersten
@@ -86,11 +92,44 @@ const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVE
   onClose: () => console.log('Verbindung zum Server getrennt.'),
   onMessage: (message) => {
     if (message.type === 'hello') {
+      // Erstes hello = Verbindungsaufbau: Aufforderung zur Regionswahl
+      // (docs/KONZEPT.md Abschnitt 6). Jedes weitere hello = Kartenwechsel:
+      // neue Region + ihre Missionen anzeigen (Abschnitt 3.1/3.2).
+      const previousPreset = getCurrentPreset();
+      setCurrentPreset(message.preset);
+      if (previousPreset === null) {
+        terminal.print(`Verbunden - aktuelle Region: ${MAP_PRESETS[message.preset].name}`);
+        terminal.print('Waehle deine Region: "map list" zeigt alle, "map select <id>" wechselt.');
+        terminal.print('"missions" zeigt die Missionen der aktuellen Region.');
+        terminal.print('');
+      } else {
+        terminal.print('');
+        terminal.print(`Region gewechselt: ${MAP_PRESETS[message.preset].name}`);
+        terminal.print(formatMissionList(message.preset));
+      }
+
+      // Jedes hello ist ein kompletter Neuaufbau der Welt (kommt nach jedem
+      // Kartenwechsel erneut, siehe protocol.ts): erst die alte Welt
+      // wegraeumen, sonst laege das neue Terrain ueber dem alten und
+      // verwaiste Einheiten blieben stehen.
+      if (terrainMesh) {
+        scene.remove(terrainMesh);
+        terrainMesh.geometry.dispose();
+        (terrainMesh.material as THREE.Material).dispose();
+      }
+      for (const mesh of unitMeshes.values()) scene.remove(mesh);
+      unitMeshes.clear();
+      selectedUnitIds.clear();
+      previousSnapshot = null;
+      latestSnapshot = null;
+      resetCamera(cameraRig);
+
       const terrainTypes = new Uint8Array(message.terrain);
       mapWidth = message.mapWidth;
       mapHeight = message.mapHeight;
       terrainElevation = new Float32Array(message.elevation);
-      scene.add(createTerrainMesh(mapWidth, mapHeight, terrainTypes, terrainElevation));
+      terrainMesh = createTerrainMesh(mapWidth, mapHeight, terrainTypes, terrainElevation);
+      scene.add(terrainMesh);
       return;
     }
 
@@ -119,6 +158,10 @@ const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVE
     }
   },
 });
+
+// Terminal-Befehle (map select, spaeter mission start) schicken ihre
+// typisierten Befehle ueber dieselbe Verbindung wie Maus-Befehle.
+bindGameCommands((command) => sendCommand(socket, command));
 
 // Kamera ist die zentrale Steuerung (docs/KONZEPT.md Abschnitt 5.1): sie wird
 // per Touch-/Maus-Ziehen oder WASD geschwenkt. Ein Tippen ohne nennenswerte

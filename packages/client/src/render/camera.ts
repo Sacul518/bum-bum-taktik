@@ -91,6 +91,18 @@ function updateCameraTransform(rig: CameraRig): void {
   rig.camera.lookAt(rig.target);
 }
 
+// Zurueck auf die Startansicht (Kartenmitte, Standard-Zoom und -Winkel):
+// nach einem Kartenwechsel ergibt die alte Kameraposition auf der neuen
+// Karte keinen Sinn mehr.
+export function resetCamera(rig: CameraRig): void {
+  rig.target.set(0, 0, 0);
+  rig.azimuth = DEFAULT_AZIMUTH;
+  rig.tilt = DEFAULT_TILT;
+  rig.viewSize = DEFAULT_VIEW_SIZE;
+  updateCameraFrustum(rig);
+  updateCameraTransform(rig);
+}
+
 export function panCamera(rig: CameraRig, deltaX: number, deltaZ: number): void {
   rig.target.x += deltaX;
   rig.target.z += deltaZ;

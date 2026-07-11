@@ -169,7 +169,9 @@ Typischer Ablauf: Spieler drückt Hotkey `1` (wählt Einheitengruppe 1) → tipp
 
 ## 6. In-Game-Terminal (CLI)
 
-**Empfehlung: ein eigenes, schlankes Terminal-Widget bauen, nicht xterm.js einbinden.** xterm.js ist für einen "echten" Terminal-Emulator (mit ANSI-Farben, PTY-Anbindung) gedacht — hier reicht ein einfaches Scrollback-`<div>` + ein `<input>`-Feld, das per Hotkey (z. B. die Taste `` ` ``, unmodifiziert, kollidiert mit nichts) ein-/ausgeblendet wird. Das ist für ein Einsteiger-Team leichter zu warten und zu erweitern.
+**Empfehlung: ein eigenes, schlankes Terminal-Widget bauen, nicht xterm.js einbinden.** xterm.js ist für einen "echten" Terminal-Emulator (mit ANSI-Farben, PTY-Anbindung) gedacht — hier reicht ein einfaches Scrollback-`<div>` + ein `<input>`-Feld. Das ist für ein Einsteiger-Team leichter zu warten und zu erweitern.
+
+**Fensterform (festgelegt 2026-07-11):** das Terminal ist ein schwebendes Fenster im macOS/Windows-Stil — Titelleiste zum Verschieben, roter Punkt zum Schließen, Größe änderbar über die Ecke unten rechts. Geöffnet/geschlossen wird es über einen festen Seiten-Button am linken Bildschirmrand mit Terminal-Logo (`>_`). Hintergrund: der ursprüngliche Hotkey-Toggle (Taste neben der 1) scheiterte auf deutschen Mac-Tastaturen an einem Chromium-Problem (`Backquote`/`IntlBackslash` auf ISO-Layouts vertauscht); als Bonus reagieren jetzt beide Codes weiterhin, Escape schließt.
 
 **Optik (festgelegt 2026-07-11):** bewusst oldschool — 90er-Retro-Terminal: schwarzer (leicht transparenter) Hintergrund, grüner Monospace-Text, Block-Cursor. Beim Spielstart ist das Terminal geöffnet und fordert zur Regionswahl auf (Abschnitt 3.1/3.2).
 
