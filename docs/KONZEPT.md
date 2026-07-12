@@ -124,9 +124,11 @@ Statt einer einzigen Karte gibt es benannte Parametersätze für `generateTerrai
 
 Dafür wurden drei Terrain-Typen ergänzt (nur hinten an `TERRAIN_TYPES` angehängt, damit sich bestehende Indizes nicht verschieben): `sand` (begehbar wie Ebene), `snow` (wie Berge), `bridge`. Die Brücke ist bewusst in **beiden** Begehbarkeits-Rastern frei — Landeinheiten fahren drüber, Schiffe drunter durch; möglich, weil die Raster pro Domain getrennt sind (Abschnitt 3).
 
-### 3.2 Missionen — Minimaldefinition (2026-07-11)
+### 3.2 Missionen — Minimaldefinition (2026-07-11), startbar seit 2026-07-11
 
-Eine **Mission** gehört zu genau einer Region (= Map-Preset) und ist vorerst nur: `id`, `name`, `description` und eine **Startaufstellung** (Liste aus Einheitentyp + Fraktion + Anzahl). Definiert als Daten in `shared/src/missions.ts` (`MISSIONS`, `missionsForRegion`). Die Spawn-*Positionen* bleiben Server-Logik (Ring-Suche um die Kartenmitte). Bewusst noch **nicht** definiert: Siegbedingungen, Skript-Ereignisse, Belohnungen — das kommt, sobald die erste Mission wirklich spielbar ist. Ausgewählt werden Region und Mission über das In-Game-Terminal (Abschnitt 6).
+Eine **Mission** gehört zu genau einer Region (= Map-Preset) und ist vorerst nur: `id`, `name`, `description` und eine **Startaufstellung** (Liste aus Einheitentyp + Fraktion + Anzahl). Definiert als Daten in `shared/src/missions.ts` (`MISSIONS`, `missionsForRegion`, `getMission`). Die Spawn-*Positionen* bleiben Server-Logik (Ring-Suche um die Kartenmitte). Bewusst noch **nicht** definiert: Siegbedingungen, Skript-Ereignisse, Belohnungen — das kommt, sobald die erste Mission wirklich spielbar ist. Ausgewählt werden Region und Mission über das In-Game-Terminal (Abschnitt 6).
+
+**Umgesetzt:** `mission start <id>` im Terminal schickt den typisierten `startMission`-Befehl; der Server wechselt auf die Region der Mission (immer frische Generierung = Neustart), spawnt die Startaufstellung und schickt allen Clients ein neues `hello` mit `missionId`. `map select` verlässt eine laufende Mission (freie Aufstellung). Spawn-Regeln: Spieler nahe der Kartenmitte, Feinde im Ring (Mindestradius 20) **plus echtem Mindestabstand zu den tatsächlich platzierten Spieler-Einheiten** — die reine Ring-Logik reichte nicht, weil z. B. beim Meer-Preset die Kartenmitte im Wasser liegt und Spieler-Spawns weit vom Zentrum abgedrängt werden können.
 
 ---
 
@@ -200,7 +202,7 @@ Beispielbefehle: `drone list`, `drone move <id> <x> <y>`, `hack <zielId>` (löst
 | Kenney.nl | [Pixel Vehicle Pack](https://www.kenney.nl/assets/pixel-vehicle-pack) | 50 Fahrzeug-Sprites |
 | OpenGameArt.org | ["PixVoxel" Isometric Wargame Sprites](https://opengameart.org/content/pixvoxel-colorful-isometric-wargame-sprites) (Tommy Ettinger) | Tausende Sprites, 8-Richtungs-Animation, mehrere Paletten, Panzer/Infanterie mit Upgrade-Varianten (Power/Speed/Technique) |
 
-**Noch zu prüfen, nicht raten:** Für Schiffe/U-Boote/Flugzeuge wurde in der Recherche kein dediziertes Kenney-Marine-/Luftfahrt-Pixel-Paket bestätigt. Bevor du dich auf ein bestimmtes Paket festlegst, direkt auf kenney.nl/assets bzw. opengameart.org nachschauen, statt einen Paketnamen anzunehmen, der vielleicht nicht existiert.
+**Marine-/Luft-Assets — recherchiert & entschieden (2026-07-11):** Das PixVoxel-Pack enthält laut seiner OpenGameArt-Seite selbst Marine-Einheiten (**Patrol Boat, Battleship, Cruiser, Submarine**) und ein Flugzeug (**Plane_P**) — im selben orthogonalen Stil/Palettenschema wie die schon genutzten Infanterie-Sprites. **Empfehlung: dabei bleiben, kein neues Paket.** Geprüfte Alternativen, alle schlechter: Kenney hat kein modernes Marine-/Luft-Top-Down-Paket (nur das thematisch unpassende Pirate Pack); das zweite PixVoxel-Pack ("Very Diverse") ist laut Autor **nicht kompatibel** mit den orthogonalen Sprites (nur isometrisch, anderer Winkel); die CC0-Flugzeug-Packs von sujit1717 ("Top Down Planes", "Dark War Pack") wären nur Notlösungen mit Stilbruch. Noch offen: ob das Submarine-Sprite einen getauchten Zustand hat — beim Extrahieren im Archiv nach `Submarine_*` schauen.
 
 **Performantes Laden:** Sprites eines Einheitentyps in **einem Textur-Atlas** (Spritesheet) bündeln, nicht als einzelne PNG-Dateien — Kenneys Pakete liefern das meist schon so aus. Beim Start werden alle Atlanten einmal vorab geladen (mit einem Ladebalken), damit während des Matches keine Ladeaussetzer entstehen.
 
@@ -295,7 +297,14 @@ Diese Aufteilung folgt bewusst den Ordnergrenzen, damit zwei Subagenten möglich
 **Phase 2 — Gefecht & Mehrspieler-Sync**
 - Kampfauflösung, Projektile, Treffer-Berechnung ✅ *(siehe Kasten unten)*
 - Tick-Rate/Interpolation auf echter Hardware (6 iPads gleichzeitig) feinjustieren
-- Fog of War, Basis-Radar
+- Fog of War, Basis-Radar ✅ *(siehe Kasten unten)*
+
+> **Fog of War, Radar & Gegner-KI — entschieden & umgesetzt (2026-07-11):**
+> - **Serverseitige Sichtbarkeit** (`server/src/visibility.ts`): pro Tick werden nur die Feind-Einheiten mitgeschickt, die mindestens eine Spieler-Einheit sieht (Sichtweite pro Einheitentyp in `shared/constants.ts` → `VISION_RANGE`; Panzer 10, Infanterie 8, Boot 12, Flugzeug 16). Zusätzlich sichtbar: Feinde, die im selben Tick geschossen haben (Mündungsfeuer verrät die Position — sonst gäbe es Tracer aus dem Nichts). Koop = geteilte Sicht: ein gefiltertes Paket für alle Clients, weiterhin einmal serialisiert (Abschnitt 2.1).
+> - **Client-Verdunkelung** (`client/src/render/fog.ts`): Ebene über der Karte mit einer DataTexture (1 Texel pro Kachel), Sichtkreise der eigenen Einheiten werden pro Server-Tick freigestempelt; zwei Zustände, bewusst kein "erkundet"-Gedächtnis.
+> - **Basis-Radar** (`client/src/ui/minimap.ts`): Minimap unten rechts als 2D-Canvas im Bildschirmraum (wie in Abschnitt 4 vorgesehen) — Terrain einmal pro Kartenwechsel gedownsampelt, Blips pro Tick (grün eigene, rot sichtbare Feinde). Kamera-Rechteck und Klick-zum-Schwenken: später.
+> - **Gegner-KI, Minimalversion** (`server/src/ai.ts`): Feind-Einheiten ohne Ziel nehmen die nächste Spieler-Einheit innerhalb `ENEMY_AGGRO_RANGE` (14) ins Visier; Verfolgung/Feuer über die vorhandene Angriffslogik, einmal aggro = bis zum Tod. Aggro-Reichweite liegt bewusst über der Sichtweite der Bodeneinheiten: nur der Aufklärer (Flugzeug) sieht Feinde, bevor sie angreifen. Patrouillen/Gruppenverhalten: spätere Ausbaustufe.
+> - **Auto-Reconnect** (`client/src/net/client.ts`): Client verbindet nach Trennung (Server-Neustart, iPad-Ruhezustand) automatisch neu mit Backoff 1–5 s; korrekt, weil jedes `hello` ein kompletter Welt-Neuaufbau ist. WebGL-Kontextverlust (Risiko 2) lädt die Seite neu.
 
 > **Kampfauflösung — entschieden & umgesetzt (2026-07-10):**
 > - **Ziel-Logik:** Auto-Feuer auf den nächsten Feind in Reichweite (beide Fraktionen), zusätzlich expliziter Angriffsbefehl per Klick auf einen Feind — die Einheit verfolgt das Ziel und feuert ab Reichweite. Bewegungsbefehl bricht den Angriff ab.
@@ -333,6 +342,6 @@ Diese Aufteilung folgt bewusst den Ordnergrenzen, damit zwei Subagenten möglich
 
 - Genaue Kartengröße (z. B. 512×512 vs. 1024×1024 Kacheln) sollte nach ersten Performance-Tests auf echter Hardware festgelegt werden.
 - Ob Spielstände zwischen Sitzungen gespeichert werden müssen (aktuell angenommen: nein, jedes Match startet frisch) — falls doch, braucht es eine einfache Persistenzschicht (z. B. SQLite auf dem Pi).
-- Konkrete Marine-/Luftfahrt-Asset-Quelle noch zu recherchieren (Abschnitt 7).
+- ~~Konkrete Marine-/Luftfahrt-Asset-Quelle noch zu recherchieren~~ → erledigt, siehe Abschnitt 7: PixVoxel-Pack deckt Marine + Luft ab; Sprites müssen noch extrahiert und in den Loader eingebunden werden.
 - Echter Wasser-Shader: Wasser-Kacheln sind aktuell nur einfarbige Platzhalter-Säulen (siehe `client/src/render/terrain.ts`). Später ein animiertes Wasser-Material (Wellen-Bewegung, Transparenz/Reflexion) wie in Abschnitt 4 als `waterGroup` vorgesehen.
 - Wetter-Partikelsystem (Regen, Schnee, Nebel o. ä.): noch nicht entworfen — Rendering-Ansatz (z. B. `THREE.Points` mit Textur-Atlas) und Performance-Budget für die iPad-GPU müssen noch geklärt werden, bevor das umgesetzt wird.
