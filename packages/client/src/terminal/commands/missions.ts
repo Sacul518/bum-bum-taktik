@@ -62,7 +62,7 @@ function handleMissionCommand(args: string[]): string {
   return 'Verwendung: mission list | mission start <id>';
 }
 
-registerCommand('mission', 'Missionen: "mission list" zeigt alle, "mission start <id>" startet eine.', (args) =>
+registerCommand('mission', 'Missionen: "mission list" zeigt die der aktuellen Region, "mission start <id>" startet eine.', (args) =>
   handleMissionCommand(args),
 );
 

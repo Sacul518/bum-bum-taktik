@@ -40,10 +40,13 @@ export function createFogOverlay(mapWidth: number, mapHeight: number): FogOverla
 
   // PlaneGeometry deckt exakt denselben Weltbereich ab wie das Terrain-Mesh
   // (render/terrain.ts: Weltursprung = Kartenmitte, x/z in [-width/2, width/2]
-  // bzw. [-height/2, height/2]). Nach der Rotation unten passen die
-  // Standard-UVs von PlaneGeometry exakt auf Kachel-Zeilen/-Spalten (Zeile 0
-  // des Texturdatenarrays liegt an z = -height/2) - keine manuelle
-  // UV-Anpassung noetig.
+  // bzw. [-height/2, height/2]). Achtung Zeilenrichtung: DataTexture hat
+  // (anders als Bild-Texturen) flipY = false als Default - zusammen mit der
+  // Rotation unten liegt Zeile 0 des Texturdatenarrays deshalb an
+  // z = +height/2, die Zeilen laufen also GEGEN die Welt-Z-Richtung. Der
+  // Sichtkreis-Stempel in update() rechnet das ein (cy-Formel); ohne diese
+  // Spiegelung landen die Kreise an der Z-gespiegelten Position der Einheit
+  // (im Browser-Test 2026-07-12 genau so beobachtet).
   const geometry = new THREE.PlaneGeometry(mapWidth, mapHeight);
   const material = new THREE.MeshBasicMaterial({
     map: texture,
@@ -69,11 +72,12 @@ export function createFogOverlay(mapWidth: number, mapHeight: number): FogOverla
       if (unit.faction !== 'player') continue;
       const radius = VISION_RANGE[unit.unitType];
 
-      // Weltkoordinaten -> Kachel-Raum (gleiche Konvention wie
-      // sampleElevation() in render/terrain.ts), als Fliesskommazahl fuer
-      // den praezisen euklidischen Kreistest.
+      // Weltkoordinaten -> Kachel-Raum, als Fliesskommazahl fuer den
+      // praezisen euklidischen Kreistest. X wie in sampleElevation()
+      // (render/terrain.ts); Y gespiegelt, weil Textur-Zeile 0 an
+      // z = +height/2 liegt (siehe Kommentar bei der Geometrie oben).
       const cx = unit.x + mapWidth / 2;
-      const cy = unit.y + mapHeight / 2;
+      const cy = mapHeight / 2 - unit.y;
       const radiusSq = radius * radius;
 
       // Nur den Bounding-Box-Bereich der Einheit durchlaufen, nicht die
