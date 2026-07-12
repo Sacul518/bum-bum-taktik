@@ -7,15 +7,18 @@ import {
   computeWalkability,
   encodeServerMessage,
   generatePresetMap,
+  getMission,
   isMapPresetId,
   type ClientCommand,
   type MapPresetId,
+  type MissionUnitSetup,
   type ServerHello,
   type StateUpdate,
   type TerrainMap,
   type WalkabilityGrids,
 } from '@bum-bum-taktik/shared';
 import { advanceUnits, initUnits, setAttackTarget, setUnitTargets } from './gameLoop.js';
+import { filterVisibleEntities } from './visibility.js';
 
 // Start-Preset per Umgebungsvariable waehlbar (MAP_PRESET=meer npm run dev);
 // danach wechselbar per selectMap-Befehl aus dem Terminal (docs/KONZEPT.md
@@ -27,18 +30,24 @@ if (!isMapPresetId(presetEnv)) {
 }
 
 // Karte + Begehbarkeit sind veraenderbarer Zustand: switchMap() ersetzt sie
-// bei einem Kartenwechsel komplett und spawnt die Einheiten neu. Wird auch
-// fuer die Erst-Generierung beim Start benutzt (Aufruf direkt darunter).
+// bei einem Kartenwechsel komplett und spawnt die Einheiten neu (immer eine
+// frische Generierung, auch wenn die Region gleich bleibt - ein Missions-
+// neustart soll wieder bei Null anfangen). Wird auch fuer die Erst-
+// Generierung beim Start benutzt (Aufruf direkt darunter).
 let currentPresetId: MapPresetId;
 let map: TerrainMap;
 let walkability: WalkabilityGrids;
 
-function switchMap(presetId: MapPresetId): void {
+// Aktive Mission (docs/KONZEPT.md Abschnitt 3.2) oder null = freie
+// Aufstellung. selectMap setzt sie zurueck, startMission setzt sie.
+let activeMissionId: string | null = null;
+
+function switchMap(presetId: MapPresetId, setup?: MissionUnitSetup[]): void {
   const preset = MAP_PRESETS[presetId];
   currentPresetId = presetId;
   map = generatePresetMap(presetId);
   walkability = computeWalkability(map);
-  initUnits(walkability);
+  initUnits(walkability, setup);
   console.log(`Karte generiert: Preset "${preset.name}" (${map.width}x${map.height}, Seed ${preset.gen.seed ?? 1})`);
 }
 
@@ -59,9 +68,7 @@ function buildHello(playerId: string): ServerHello {
     type: 'hello',
     playerId,
     preset: currentPresetId,
-    // Noch keine Missionsverwaltung im Server - kommt mit dem
-    // startMission-Handler (docs/KONZEPT.md Abschnitt 3.2).
-    missionId: null,
+    missionId: activeMissionId,
     mapWidth: map.width,
     mapHeight: map.height,
     terrain: map.terrain.buffer as ArrayBuffer,
@@ -72,6 +79,17 @@ function buildHello(playerId: string): ServerHello {
 // Verbundene Clients mit ihrer playerId: nach einem Kartenwechsel bekommt
 // jeder Client sein hello erneut (jeder ein eigenes, wegen der playerId).
 const connectedPlayers = new Map<WebSocket, string>();
+
+// Nach jedem Karten-/Missionswechsel bekommt jeder verbundene Client sein
+// (aktualisiertes) hello erneut - jedes hello ist ein kompletter Neuaufbau
+// der Welt auf Client-Seite.
+function broadcastHello(): void {
+  for (const [client, clientPlayerId] of connectedPlayers) {
+    if (client.readyState === client.OPEN) {
+      client.send(encodeServerMessage(buildHello(clientPlayerId)));
+    }
+  }
+}
 
 wss.on('connection', (socket) => {
   const playerId = `player-${nextPlayerNumber++}`;
@@ -94,12 +112,23 @@ wss.on('connection', (socket) => {
           console.error(`selectMap mit unbekanntem Preset "${String(command.preset)}" ignoriert`);
           return;
         }
+        // Freie Aufstellung: eine laufende Mission wird verlassen.
+        activeMissionId = null;
         switchMap(command.preset);
-        for (const [client, clientPlayerId] of connectedPlayers) {
-          if (client.readyState === client.OPEN) {
-            client.send(encodeServerMessage(buildHello(clientPlayerId)));
-          }
+        broadcastHello();
+      } else if (command.type === 'startMission') {
+        // missionId kommt als JSON von aussen - zur Laufzeit gegen MISSIONS
+        // pruefen, nicht nur dem TypeScript-Typ vertrauen.
+        const mission = getMission(command.missionId);
+        if (!mission) {
+          console.error(`startMission mit unbekannter missionId "${command.missionId}" ignoriert`);
+          return;
         }
+        activeMissionId = mission.id;
+        // Immer frisch generieren, auch wenn die Region gleich bleibt - ein
+        // Missionsneustart soll wieder bei der Startaufstellung anfangen.
+        switchMap(mission.region, mission.setup);
+        broadcastHello();
       }
     } catch (err) {
       console.error('Ungueltiger Client-Befehl:', err);
@@ -122,12 +151,13 @@ wss.on('connection', (socket) => {
 setInterval(() => {
   tick += 1;
   const { entities, shots } = advanceUnits();
+  const { entities: visibleEntities, visibleEnemyIds } = filterVisibleEntities(entities, shots);
   const state: StateUpdate = {
     type: 'state',
     tick,
-    entities,
+    entities: visibleEntities,
     shots,
-    visibleEnemyIds: [],
+    visibleEnemyIds,
   };
   const payload = encodeServerMessage(state);
   for (const client of wss.clients) {

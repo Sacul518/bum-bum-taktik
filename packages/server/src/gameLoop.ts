@@ -8,24 +8,30 @@ import {
   type EntitySnapshot,
   type Faction,
   type GridPoint,
+  type MissionUnitSetup,
   type ShotEvent,
   type UnitType,
   type WalkabilityGrids,
 } from '@bum-bum-taktik/shared';
+import { updateEnemyAggro } from './ai.js';
 
-// Platzhalter-Truppen: eine Spieler-Einheit pro Domain-Typ (docs/KONZEPT.md
-// Abschnitt 3) plus zwei stillstehende Feind-Einheiten als Zielscheiben fuer
-// die Kampfaufloesung (Abschnitt 9, Phase 2). Echtes Spawn-/Basenbau-System
-// und Feind-KI (Bewegung) kommen spaeter.
+// Ohne Mission (freie Aufstellung, docs/KONZEPT.md Abschnitt 3.2): eine
+// Spieler-Einheit pro Domain-Typ plus zwei stillstehende Feind-Einheiten als
+// Zielscheiben. Mit Mission: Aufstellung aus mission.setup (initUnits).
 const MOVE_SPEED_UNITS_PER_S = 8;
 const ARRIVAL_EPSILON = 0.05;
 
-// Kachel-Abstand der Feind-Spawns von der Kartenmitte: weit genug, dass beim
-// Start nicht sofort geschossen wird (groesste Reichweite ist 8), aber nah
-// genug, um den Angriff schnell testen zu koennen.
-const ENEMY_SPAWN_RADIUS = 12;
+// Mindestabstand (Kacheln) der Feind-Spawns: muss groesser sein als
+// ENEMY_AGGRO_RANGE (14, siehe ai.ts), sonst greift die Gegner-KI die
+// Spieler-Einheiten schon beim Spawn an, statt dass man den Anmarsch sieht.
+// Doppelt abgesichert (siehe findSpawnTile/minDistanceFromPlayers): Ring-
+// Radius von der Kartenmitte UND echter Mindestabstand zu den tatsaechlich
+// platzierten Spieler-Einheiten - auf Karten mit knappem, versetztem Land
+// (Preset "meer") liegt die Kartenmitte selbst oft nicht auf begehbarem
+// Land, dann reicht "Radius von der Mitte" allein nicht als Garantie.
+const ENEMY_SPAWN_RADIUS = 20;
 
-interface UnitState {
+export interface UnitState {
   id: string;
   unitType: UnitType;
   faction: Faction;
@@ -70,7 +76,18 @@ function gridToWorld(point: GridPoint, grids: WalkabilityGrids): { x: number; y:
 // (Weltursprung = Kartenmitte) spawnen, nicht irgendwo am Kartenrand.
 // "occupied" haelt bereits vergebene Kacheln zurueck, damit z. B. Panzer und
 // Infanterie (beide Domain "land") nicht exakt uebereinander spawnen.
-function findSpawnTile(grids: WalkabilityGrids, domain: Domain, occupied: Set<string>, minRadius = 0): GridPoint {
+// "isValid" ist ein optionaler Zusatzfilter (Weltkoordinaten) - noetig, weil
+// "Radius von der Kartenmitte" auf Karten mit knappem, versetztem Land (z. B.
+// Preset "meer": zwei kleine Inseln, nicht die Kartenmitte selbst) keine
+// verlaessliche Garantie fuer den tatsaechlichen Abstand zu anderen Einheiten
+// ist - siehe minDistanceFromPlayers unten.
+function findSpawnTile(
+  grids: WalkabilityGrids,
+  domain: Domain,
+  occupied: Set<string>,
+  minRadius = 0,
+  isValid: (world: { x: number; y: number }) => boolean = () => true,
+): GridPoint {
   const centerX = Math.floor(grids.width / 2);
   const centerY = Math.floor(grids.height / 2);
   const maxRadius = Math.max(grids.width, grids.height);
@@ -82,15 +99,23 @@ function findSpawnTile(grids: WalkabilityGrids, domain: Domain, occupied: Set<st
         const x = centerX + dx;
         const y = centerY + dy;
         const key = `${x},${y}`;
-        if (!occupied.has(key) && isWalkable(grids, domain, x, y)) {
-          occupied.add(key);
-          return { x, y };
-        }
+        if (occupied.has(key) || !isWalkable(grids, domain, x, y)) continue;
+        if (!isValid(gridToWorld({ x, y }, grids))) continue;
+        occupied.add(key);
+        return { x, y };
       }
     }
   }
 
   throw new Error(`Keine begehbare Kachel fuer Domain "${domain}" gefunden`);
+}
+
+// Zusatzfilter fuer Feind-Spawns: verlangt echten Mindestabstand (Weltkoord.,
+// euklidisch) zu jeder bereits platzierten Spieler-Einheit - der reine
+// Ring-Radius von der Kartenmitte reicht allein nicht, siehe findSpawnTile.
+function minDistanceFromPlayers(playerPositions: { x: number; y: number }[], minDistance: number) {
+  return (world: { x: number; y: number }): boolean =>
+    playerPositions.every((p) => Math.hypot(world.x - p.x, world.y - p.y) >= minDistance);
 }
 
 function createUnit(id: string, unitType: UnitType, faction: Faction, spawnTile: GridPoint, grids: WalkabilityGrids): UnitState {
@@ -110,15 +135,65 @@ function createUnit(id: string, unitType: UnitType, faction: Faction, spawnTile:
   };
 }
 
-export function initUnits(grids: WalkabilityGrids): void {
+// Fortlaufende IDs pro Fraktion+Typ (tank-1, tank-2, enemy-tank-1, ...) -
+// eigene Zaehler-Map, damit mehrere Setup-Eintraege mit demselben Typ
+// (kommt in den aktuellen MISSIONS nicht vor, ist aber kein Sonderfall wert)
+// keine doppelten IDs erzeugen. Spieler zuerst spawnen: die Feind-Suche
+// braucht deren tatsaechliche Positionen fuer minDistanceFromPlayers.
+function spawnFromSetup(setup: MissionUnitSetup[], grids: WalkabilityGrids, occupied: Set<string>): UnitState[] {
+  const counters = new Map<string, number>();
+  const spawned: UnitState[] = [];
+
+  function spawnEntries(faction: Faction, isValid?: (world: { x: number; y: number }) => boolean): void {
+    for (const entry of setup.filter((e) => e.faction === faction)) {
+      const counterKey = `${entry.faction}-${entry.unitType}`;
+      for (let i = 0; i < entry.count; i++) {
+        const n = (counters.get(counterKey) ?? 0) + 1;
+        counters.set(counterKey, n);
+        const id = entry.faction === 'enemy' ? `enemy-${entry.unitType}-${n}` : `${entry.unitType}-${n}`;
+        const minRadius = entry.faction === 'enemy' ? ENEMY_SPAWN_RADIUS : 0;
+        const spawnTile = findSpawnTile(grids, UNIT_DOMAIN[entry.unitType], occupied, minRadius, isValid);
+        spawned.push(createUnit(id, entry.unitType, entry.faction, spawnTile, grids));
+      }
+    }
+  }
+
+  spawnEntries('player');
+  // Schnappschuss-Kopie: "spawned" waechst in der naechsten Zeile weiter
+  // (Feind-Einheiten werden angehaengt) - ohne Kopie wuerde jede weitere
+  // Feind-Einheit faelschlich auch gegen bereits platzierte Feinde statt nur
+  // gegen Spieler geprueft.
+  spawnEntries('enemy', minDistanceFromPlayers([...spawned], ENEMY_SPAWN_RADIUS));
+
+  return spawned;
+}
+
+export function initUnits(grids: WalkabilityGrids, setup?: MissionUnitSetup[]): void {
   activeGrids = grids;
   const occupied = new Set<string>();
+
+  if (setup) {
+    units = spawnFromSetup(setup, grids, occupied);
+    return;
+  }
+
   units = (Object.keys(UNIT_DOMAIN) as UnitType[]).map((unitType) =>
     createUnit(`${unitType}-1`, unitType, 'player', findSpawnTile(grids, UNIT_DOMAIN[unitType], occupied), grids),
   );
+  // Schnappschuss-Kopie: "units" waechst gleich weiter (Feind-Einheiten
+  // werden angehaengt) - ohne Kopie wuerde die zweite Feind-Einheit
+  // faelschlich auch gegen die erste Feind-Einheit statt nur gegen Spieler
+  // geprueft.
+  const isFarFromPlayers = minDistanceFromPlayers([...units], ENEMY_SPAWN_RADIUS);
   for (const unitType of ['tank', 'infantry'] as UnitType[]) {
     units.push(
-      createUnit(`enemy-${unitType}-1`, unitType, 'enemy', findSpawnTile(grids, UNIT_DOMAIN[unitType], occupied, ENEMY_SPAWN_RADIUS), grids),
+      createUnit(
+        `enemy-${unitType}-1`,
+        unitType,
+        'enemy',
+        findSpawnTile(grids, UNIT_DOMAIN[unitType], occupied, ENEMY_SPAWN_RADIUS, isFarFromPlayers),
+        grids,
+      ),
     );
   }
 }
@@ -277,6 +352,8 @@ function removeDeadUnits(): void {
 export function advanceUnits(): { entities: EntitySnapshot[]; shots: ShotEvent[] } {
   if (!activeGrids) return { entities: [], shots: [] };
   const grids = activeGrids;
+
+  updateEnemyAggro(units);
 
   for (const unit of units) {
     updateAttackChase(unit, grids);

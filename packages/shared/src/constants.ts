@@ -47,8 +47,11 @@ export const VISION_RANGE: Record<UnitType, number> = {
 
 // Gegner-KI: ab dieser Distanz (Kacheln) nimmt eine Feind-Einheit die
 // naechste Spieler-Einheit ins Visier und verfolgt sie. Bewusst groesser als
-// jede Waffen-Reichweite, aber kleiner als die Spieler-Sichtweiten - wer
-// aufklaert, sieht den Feind, bevor der angreift.
+// jede Waffen-Reichweite (sonst gaebe es keine Verfolgung) und groesser als
+// die Sichtweite der Bodeneinheiten: Panzer/Infanterie koennen von Feinden
+// ueberrascht werden, die sie noch nicht sehen - nur der Aufklaerer (plane,
+// Sichtweite 16) entdeckt Feinde, bevor die aggro werden. Das macht
+// Aufklaerung wertvoll.
 export const ENEMY_AGGRO_RANGE = 14;
 
 // Schwellenwerte fuer den Hoehenwert e (-1..1) aus der Terrain-Generierung,
