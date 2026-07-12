@@ -6,3 +6,5 @@ import './clear.js';
 import './exit.js';
 import './map.js';
 import './missions.js';
+import './select.js';
+import './units.js';
