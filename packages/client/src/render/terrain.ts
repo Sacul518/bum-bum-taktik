@@ -3,7 +3,7 @@ import { TERRAIN_TYPES, type TerrainType } from '@bum-bum-taktik/shared';
 
 // Platzhalter-Farben pro Terrain-Typ (docs/KONZEPT.md Abschnitt 3). Echte
 // Sprite-/Textur-Darstellung folgt spaeter in Phase 1 (Asset-Pipeline).
-const TERRAIN_COLORS: Record<TerrainType, THREE.Color> = {
+export const TERRAIN_COLORS: Record<TerrainType, THREE.Color> = {
   deepWater: new THREE.Color(0x1c4966),
   shallowWater: new THREE.Color(0x3d84a8),
   beach: new THREE.Color(0xe3d9a6),

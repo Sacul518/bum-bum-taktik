@@ -16,7 +16,9 @@ import { createTerrainMesh, sampleElevation } from './render/terrain.js';
 import { createUnitMesh, applySnapshot, setSelected, preloadUnitAtlas } from './render/units.js';
 import { createPathLine, updatePathLine } from './render/path.js';
 import { spawnTracer, updateTracers } from './render/tracers.js';
-import { connectToServer, sendCommand } from './net/client.js';
+import { createFogOverlay, type FogOverlay } from './render/fog.js';
+import { createMinimap } from './ui/minimap.js';
+import { connectToServer } from './net/client.js';
 import { resolveCameraInput } from './input/hotkeys.js';
 import { createTerminal } from './terminal/Terminal.js';
 import { bindGameCommands, bindSelection, getCurrentPreset, setCurrentPreset } from './terminal/gameBridge.js';
@@ -34,6 +36,15 @@ const scene = createScene();
 const cameraRig = createCameraRig(window.innerWidth / window.innerHeight);
 const camera = cameraRig.camera;
 
+// Safari (besonders iPadOS) kann den WebGL-Kontext bei Speicherdruck oder im
+// Hintergrund killen (docs/KONZEPT.md Abschnitt 10, Risiko 2). Einfachste
+// robuste Reaktion: Seite neu laden - der Server schickt beim Reconnect
+// ohnehin die komplette Welt, es geht kein Spielstand verloren.
+renderer.domElement.addEventListener('webglcontextlost', (event) => {
+  event.preventDefault();
+  location.reload();
+});
+
 // In-Game-Terminal (docs/KONZEPT.md Abschnitt 6): beim Spielstart geoeffnet,
 // danach ueber den ">_"-Button am linken Rand ein-/ausblendbar.
 const terminal = createTerminal(document.body);
@@ -46,6 +57,12 @@ terminal.open();
 
 const pathLine = createPathLine();
 scene.add(pathLine);
+
+// Radar-Minimap (KONZEPT Abschnitt 4/Phase 2) lebt ueber Kartenwechsel
+// hinweg; das Fog-of-War-Overlay haengt dagegen an der Kartengroesse und
+// wird bei jedem hello neu erzeugt.
+const minimap = createMinimap(document.body);
+let fogOverlay: FogOverlay | null = null;
 
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -87,9 +104,23 @@ let terrainMesh: THREE.Mesh | null = null;
 // laden).
 await preloadUnitAtlas();
 
-const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVER_PORT}`, {
-  onOpen: () => console.log('Mit Server verbunden.'),
-  onClose: () => console.log('Verbindung zum Server getrennt.'),
+// Verbindungsstatus nur bei Wechseln ins Terminal schreiben: der
+// Auto-Reconnect (net/client.ts) versucht es sonst alle paar Sekunden und
+// wuerde das Scrollback mit identischen Meldungen fluten.
+let wasConnected = false;
+
+const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVER_PORT}`, {
+  onOpen: () => {
+    wasConnected = true;
+    console.log('Mit Server verbunden.');
+  },
+  onClose: () => {
+    if (wasConnected) {
+      terminal.print('Verbindung zum Server getrennt - verbinde neu...');
+    }
+    wasConnected = false;
+    console.log('Verbindung zum Server getrennt.');
+  },
   onMessage: (message) => {
     if (message.type === 'hello') {
       // Erstes hello = Verbindungsaufbau: Aufforderung zur Regionswahl
@@ -122,6 +153,10 @@ const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVE
         terrainMesh.geometry.dispose();
         (terrainMesh.material as THREE.Material).dispose();
       }
+      if (fogOverlay) {
+        fogOverlay.dispose();
+        fogOverlay = null;
+      }
       for (const mesh of unitMeshes.values()) scene.remove(mesh);
       unitMeshes.clear();
       selectedUnitIds.clear();
@@ -135,6 +170,9 @@ const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVE
       terrainElevation = new Float32Array(message.elevation);
       terrainMesh = createTerrainMesh(mapWidth, mapHeight, terrainTypes, terrainElevation);
       scene.add(terrainMesh);
+      fogOverlay = createFogOverlay(mapWidth, mapHeight);
+      scene.add(fogOverlay.mesh);
+      minimap.setTerrain(mapWidth, mapHeight, terrainTypes);
       return;
     }
 
@@ -142,6 +180,11 @@ const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVE
       const entities = new Map(message.entities.map((entity) => [entity.id, entity]));
       previousSnapshot = latestSnapshot;
       latestSnapshot = { receivedAt: performance.now(), entities };
+
+      // Fog + Minimap nur pro Server-Tick (12 Hz) aktualisieren, nicht pro
+      // Frame - beide arbeiten direkt auf den Snapshot-Positionen.
+      fogOverlay?.update(message.entities);
+      minimap.update(message.entities);
 
       // Zerstoerte Einheiten (nicht mehr im Snapshot) aus der Szene entfernen.
       for (const [id, mesh] of unitMeshes) {
@@ -166,7 +209,7 @@ const socket = connectToServer(`ws://${window.location.hostname}:${DEFAULT_SERVE
 
 // Terminal-Befehle (map select, mission start) schicken ihre typisierten
 // Befehle ueber dieselbe Verbindung wie Maus-Befehle.
-bindGameCommands((command) => sendCommand(socket, command));
+bindGameCommands((command) => connection.send(command));
 
 // Auswahl-Anbindung fuer die select/units-Terminalbefehle (Abschnitt 5.3):
 // dieselbe Auswahl wie die Klick-Selektion, damit sich beide Wege nicht
@@ -324,14 +367,14 @@ renderer.domElement.addEventListener('pointerup', (event) => {
       const clickedFaction = unitMeshes.get(clickedUnitId)?.userData.faction as Faction | undefined;
       if (clickedFaction === 'enemy') {
         for (const unitId of selectedUnitIds) {
-          sendCommand(socket, { type: 'attack', unitId, targetId: clickedUnitId });
+          connection.send({ type: 'attack', unitId, targetId: clickedUnitId });
         }
       } else {
         selectedUnitIds.clear();
         selectedUnitIds.add(clickedUnitId);
       }
     } else if (drag.anchorWorld && selectedUnitIds.size > 0) {
-      sendCommand(socket, {
+      connection.send({
         type: 'move',
         unitIds: Array.from(selectedUnitIds),
         target: [drag.anchorWorld.x, drag.anchorWorld.z],
