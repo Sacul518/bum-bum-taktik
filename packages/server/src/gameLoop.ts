@@ -41,6 +41,8 @@ export interface UnitState {
   hp: number;
   /** Restliche Feuerpause in ms; die Einheit darf bei <= 0 wieder schiessen. */
   cooldownMs: number;
+  /** Restliche Hack-Lahmlegung in ms (hacking.ts); bei > 0 weder Bewegung noch Feuer. */
+  stunnedMs: number;
   /** Expliziter Angriffsbefehl: Ziel-Einheit, die verfolgt und beschossen wird. */
   attackTargetId: string | null;
   /** Kachel, zu der zuletzt ein Verfolgungs-Pfad berechnet wurde - verhindert, dass jeder Tick neu geplant wird. */
@@ -129,6 +131,7 @@ function createUnit(id: string, unitType: UnitType, faction: Faction, spawnTile:
     heading: 0,
     hp: COMBAT_STATS[unitType].maxHp,
     cooldownMs: 0,
+    stunnedMs: 0,
     attackTargetId: null,
     attackGoal: null,
     path: [],
@@ -200,6 +203,12 @@ export function initUnits(grids: WalkabilityGrids, setup?: MissionUnitSetup[]): 
 
 function findUnit(id: string): UnitState | undefined {
   return units.find((unit) => unit.id === id);
+}
+
+// Lebende Referenz auf den Einheiten-Zustand fuer Module, die ihn direkt
+// mutieren (hacking.ts, wie ai.ts es ueber den advanceUnits-Parameter tut).
+export function getUnits(): UnitState[] {
+  return units;
 }
 
 export function setUnitTargets(unitIds: string[], targetWorldX: number, targetWorldY: number): void {
@@ -318,6 +327,10 @@ function resolveShots(): ShotEvent[] {
   for (const unit of units) {
     unit.cooldownMs = Math.max(0, unit.cooldownMs - TICK_INTERVAL_MS);
     if (unit.cooldownMs > 0) continue;
+    // Gestunnte Einheiten (Hack, hacking.ts) feuern nicht - der Cooldown
+    // laeuft oben trotzdem weiter ab, damit sie nach dem Stun nicht auch
+    // noch eine volle Feuerpause nachholen muessen.
+    if (unit.stunnedMs > 0) continue;
     const target = selectFireTarget(unit);
     if (!target) continue;
 
@@ -356,6 +369,10 @@ export function advanceUnits(): { entities: EntitySnapshot[]; shots: ShotEvent[]
   updateEnemyAggro(units);
 
   for (const unit of units) {
+    // Gestunnte Einheiten (Hack, hacking.ts) stehen still; der Stun-Timer
+    // laeuft in echten ms pro Tick ab, wie cooldownMs in resolveShots.
+    unit.stunnedMs = Math.max(0, unit.stunnedMs - TICK_INTERVAL_MS);
+    if (unit.stunnedMs > 0) continue;
     updateAttackChase(unit, grids);
     advanceUnit(unit, grids);
   }
@@ -372,6 +389,9 @@ export function advanceUnits(): { entities: EntitySnapshot[]; shots: ShotEvent[]
     heading: unit.heading,
     hp: unit.hp,
     path: unit.path.map((tile) => gridToWorld(tile, grids)),
+    // Optionales Feld nur setzen, wenn es zutrifft (spart Snapshot-Bytes und
+    // vertraegt sich mit exactOptionalPropertyTypes).
+    ...(unit.stunnedMs > 0 ? { stunned: true } : {}),
   }));
 
   return { entities, shots };

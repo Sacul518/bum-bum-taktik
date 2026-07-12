@@ -4,6 +4,7 @@
 import './help.js';
 import './clear.js';
 import './exit.js';
+import './hack.js';
 import './map.js';
 import './missions.js';
 import './select.js';

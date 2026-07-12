@@ -133,6 +133,11 @@ const hpFillMaterials: Record<Faction, THREE.SpriteMaterial> = {
   enemy: new THREE.SpriteMaterial({ color: 0xdd3333 }),
 };
 
+// Gehackte (gestunnte) Einheiten bekommen einen tuerkisen Balken ueber dem
+// HP-Balken (Hacking-Minispiel, docs/KONZEPT.md Abschnitt 9, Phase 3).
+// Material bewusst geteilt - Sichtbarkeit wird pro Sprite geschaltet.
+const stunMaterial = new THREE.SpriteMaterial({ color: 0x33ddff });
+
 function createHpBar(unitType: UnitType, faction: Faction): THREE.Object3D {
   const barY = SPRITE_Y_OFFSET[unitType] + 1.1;
 
@@ -148,13 +153,20 @@ function createHpBar(unitType: UnitType, faction: Faction): THREE.Object3D {
   // die Fuellung zuverlaessig ueber dem Hintergrund gezeichnet wird.
   fill.renderOrder = 1;
 
+  const stun = new THREE.Sprite(stunMaterial);
+  stun.name = 'stunMarker';
+  stun.scale.set(HP_BAR_WIDTH, HP_BAR_HEIGHT, 1);
+  stun.position.y = barY + HP_BAR_HEIGHT * 1.6;
+  stun.visible = false;
+
   // Wie beim Auswahlring: der Balken soll keine Boden-/Einheitenklicks
   // abfangen (THREE.Raycaster testet auch Sprites).
   background.raycast = () => {};
   fill.raycast = () => {};
+  stun.raycast = () => {};
 
   const bar = new THREE.Group();
-  bar.add(background, fill);
+  bar.add(background, fill, stun);
   return bar;
 }
 
@@ -191,4 +203,7 @@ export function applySnapshot(object: THREE.Object3D, snapshot: EntitySnapshot, 
   object.position.z = snapshot.y;
   object.rotation.y = -snapshot.heading;
   updateHpBar(object, snapshot.hp, COMBAT_STATS[snapshot.unitType].maxHp);
+
+  const stun = object.getObjectByName('stunMarker');
+  if (stun) stun.visible = snapshot.stunned === true;
 }

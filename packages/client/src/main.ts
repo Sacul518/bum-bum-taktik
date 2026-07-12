@@ -21,7 +21,13 @@ import { createMinimap } from './ui/minimap.js';
 import { connectToServer } from './net/client.js';
 import { resolveCameraInput } from './input/hotkeys.js';
 import { createTerminal } from './terminal/Terminal.js';
-import { bindGameCommands, bindSelection, getCurrentPreset, setCurrentPreset } from './terminal/gameBridge.js';
+import {
+  bindGameCommands,
+  bindSelection,
+  deliverHackMessage,
+  getCurrentPreset,
+  setCurrentPreset,
+} from './terminal/gameBridge.js';
 import { formatMissionList } from './terminal/commands/missions.js';
 import './terminal/commands/index.js';
 
@@ -203,6 +209,13 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
           sampleElevation(shot.toX, shot.toY, mapWidth, mapHeight, terrainElevation),
         );
       }
+      return;
+    }
+
+    // Hacking-Antworten (nur an diesen Client gerichtet, siehe protocol.ts)
+    // gehoeren in den hack-Terminalbefehl - Zustellung ueber die gameBridge.
+    if (message.type === 'hackChallenge' || message.type === 'hackResult') {
+      deliverHackMessage(message);
     }
   },
 });

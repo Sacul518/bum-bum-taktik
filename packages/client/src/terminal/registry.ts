@@ -28,10 +28,39 @@ export function listCommands(): { name: string; description: string }[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Line-Interceptor (docs/KONZEPT.md Abschnitt 6/9): waehrend eines laufenden
+// Minispiels (z. B. Hacking-Code-Eingabe) faengt er die naechste(n)
+// Eingabezeile(n) ab, statt sie durch die Befehlssuche zu schicken. Es gibt
+// bewusst nur EINEN Slot - zwei gleichzeitige Eingabe-Modi ergeben in einem
+// einzigen Terminal keinen Sinn.
+export type LineInterceptor = (line: string, ctx: TerminalContext) => string | Promise<string>;
+
+let lineInterceptor: LineInterceptor | null = null;
+
+export function setLineInterceptor(interceptor: LineInterceptor): void {
+  lineInterceptor = interceptor;
+}
+
+export function clearLineInterceptor(): void {
+  lineInterceptor = null;
+}
+
 // Fuehrt eine eingegebene Zeile aus: erstes Wort = Befehl, Rest = Argumente.
 // Gibt den Ausgabetext zurueck (leer = keine Ausgabe). Handler-Fehler werden
 // abgefangen, damit ein kaputter Befehl nicht das ganze Terminal lahmlegt.
 export async function executeLine(line: string, ctx: TerminalContext): Promise<string> {
+  if (lineInterceptor) {
+    const interceptor = lineInterceptor;
+    try {
+      return await interceptor(line, ctx);
+    } catch (err) {
+      // Ein kaputter Interceptor darf das Terminal nicht dauerhaft
+      // "verschlucken" - Modus beenden und normal weitermachen.
+      clearLineInterceptor();
+      return `Fehler in der Eingabe-Verarbeitung: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+
   const tokens = line.trim().split(/\s+/);
   const name = tokens[0]?.toLowerCase();
   if (!name) return '';

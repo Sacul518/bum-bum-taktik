@@ -54,6 +54,17 @@ export const VISION_RANGE: Record<UnitType, number> = {
 // Aufklaerung wertvoll.
 export const ENEMY_AGGRO_RANGE = 14;
 
+// Hacking-Minispiel (docs/KONZEPT.md Abschnitt 9, Phase 3). Startwerte fuers
+// Balancing: Der Zugriffscode (HACK_CODE_BYTES Hex-Bytes) muss innerhalb
+// HACK_TIME_LIMIT_MS nachgetippt werden; Erfolg legt das Ziel HACK_STUN_MS
+// lahm. HACK_RANGE bewusst groesser als jede Waffen-Reichweite (max. 8),
+// damit man aus sicherer Entfernung hacken kann - aber kleiner als
+// ENEMY_AGGRO_RANGE (14): wer nah genug zum Hacken ist, riskiert Aggro.
+export const HACK_RANGE = 12;
+export const HACK_TIME_LIMIT_MS = 12_000;
+export const HACK_STUN_MS = 8_000;
+export const HACK_CODE_BYTES = 4;
+
 // Schwellenwerte fuer den Hoehenwert e (-1..1) aus der Terrain-Generierung,
 // siehe docs/KONZEPT.md Abschnitt 3.
 export const ELEVATION_THRESHOLDS = {

@@ -1,4 +1,11 @@
-import type { ClientCommand, EntityId, EntitySnapshot, MapPresetId } from '@bum-bum-taktik/shared';
+import type {
+  ClientCommand,
+  EntityId,
+  EntitySnapshot,
+  HackChallengeMessage,
+  HackResultMessage,
+  MapPresetId,
+} from '@bum-bum-taktik/shared';
 
 // Bruecke zwischen Terminal-Befehlen und dem Spiel in main.ts: die Befehle
 // registrieren sich per Import-Nebeneffekt (registry.ts) und koennen daher
@@ -50,4 +57,21 @@ export function bindSelection(api: SelectionApi): void {
 /** null, solange main.ts die Auswahl noch nicht angebunden hat. */
 export function getSelectionApi(): SelectionApi | null {
   return selectionApi;
+}
+
+// Hacking-Minispiel (docs/KONZEPT.md Abschnitt 9, Phase 3): die hack-
+// Antworten des Servers (Challenge/Ergebnis) kommen asynchron ueber den
+// WebSocket in main.ts an, gehoeren aber in den hack-Befehl (terminal/
+// commands/hack.ts) - gleiche Bruecken-Idee wie sendGameCommand, nur in
+// Gegenrichtung: hack.ts registriert den Handler, main.ts liefert zu.
+export type HackServerMessage = HackChallengeMessage | HackResultMessage;
+
+let hackMessageHandler: ((message: HackServerMessage) => void) | null = null;
+
+export function onHackMessage(handler: (message: HackServerMessage) => void): void {
+  hackMessageHandler = handler;
+}
+
+export function deliverHackMessage(message: HackServerMessage): void {
+  hackMessageHandler?.(message);
 }

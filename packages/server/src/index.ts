@@ -17,8 +17,9 @@ import {
   type TerrainMap,
   type WalkabilityGrids,
 } from '@bum-bum-taktik/shared';
-import { advanceUnits, initUnits, setAttackTarget, setUnitTargets } from './gameLoop.js';
+import { advanceUnits, getUnits, initUnits, setAttackTarget, setUnitTargets } from './gameLoop.js';
 import { filterVisibleEntities } from './visibility.js';
+import { abortHack, attemptHack, clearAllHacks, expireTimedOutHacks, startHack } from './hacking.js';
 
 // Start-Preset per Umgebungsvariable waehlbar (MAP_PRESET=meer npm run dev);
 // danach wechselbar per selectMap-Befehl aus dem Terminal (docs/KONZEPT.md
@@ -47,6 +48,8 @@ function switchMap(presetId: MapPresetId, setup?: MissionUnitSetup[]): void {
   currentPresetId = presetId;
   map = generatePresetMap(presetId);
   walkability = computeWalkability(map);
+  // Laufende Hacks zeigen nach dem Einheiten-Neuaufbau ins Leere.
+  clearAllHacks();
   initUnits(walkability, setup);
   console.log(`Karte generiert: Preset "${preset.name}" (${map.width}x${map.height}, Seed ${preset.gen.seed ?? 1})`);
 }
@@ -129,6 +132,15 @@ wss.on('connection', (socket) => {
         // Missionsneustart soll wieder bei der Startaufstellung anfangen.
         switchMap(mission.region, mission.setup);
         broadcastHello();
+      } else if (command.type === 'hackStart') {
+        // Antwort (Challenge oder Ablehnung) geht nur an den Anforderer -
+        // unicast, siehe protocol.ts.
+        socket.send(encodeServerMessage(startHack(String(command.targetId), playerId, getUnits())));
+      } else if (command.type === 'hackAttempt') {
+        socket.send(encodeServerMessage(attemptHack(String(command.hackId), String(command.answer), playerId, getUnits())));
+      } else if (command.type === 'hackAbort') {
+        const result = abortHack(String(command.hackId), playerId);
+        if (result) socket.send(encodeServerMessage(result));
       }
     } catch (err) {
       console.error('Ungueltiger Client-Befehl:', err);
@@ -150,6 +162,17 @@ wss.on('connection', (socket) => {
 
 setInterval(() => {
   tick += 1;
+
+  // Abgelaufene Hack-Fristen: Ergebnis aktiv an den jeweiligen Anforderer
+  // schicken (unicast) - der Client wartet sonst ewig auf sein hackResult.
+  for (const { requesterId, result } of expireTimedOutHacks(getUnits())) {
+    for (const [client, clientPlayerId] of connectedPlayers) {
+      if (clientPlayerId === requesterId && client.readyState === client.OPEN) {
+        client.send(encodeServerMessage(result));
+      }
+    }
+  }
+
   const { entities, shots } = advanceUnits();
   const { entities: visibleEntities, visibleEnemyIds } = filterVisibleEntities(entities, shots);
   const state: StateUpdate = {

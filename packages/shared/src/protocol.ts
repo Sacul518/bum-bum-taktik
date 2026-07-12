@@ -38,7 +38,41 @@ export interface StateUpdate {
   visibleEnemyIds: EntityId[]; // Fog-of-War: nur was das Team gerade sieht
 }
 
-export type ServerMessage = ServerHello | StateUpdate;
+// --- Hacking-Minispiel (docs/KONZEPT.md Abschnitt 9, Phase 3) ---
+// Ablauf: Client schickt hackStart -> Server validiert und antwortet NUR dem
+// Anforderer mit hackChallenge (Zugriffscode + Zeitlimit) -> Spieler tippt den
+// Code im Terminal nach -> Client schickt hackAttempt -> Server antwortet mit
+// hackResult. Der Stun-Effekt selbst steht fuer alle Clients im Snapshot
+// (EntitySnapshot.stunned).
+
+export interface HackChallengeMessage {
+  type: 'hackChallenge';
+  hackId: string;
+  targetId: EntityId;
+  /** Nachzutippender Zugriffscode, z. B. "A3 F0 7C 21". */
+  code: string;
+  timeLimitMs: number;
+}
+
+export type HackFailReason =
+  | 'invalidTarget' // Ziel existiert nicht, ist kein Feind oder nicht sichtbar
+  | 'outOfRange' // keine eigene Einheit in HACK_RANGE um das Ziel
+  | 'alreadyHacking' // Ziel wird schon gehackt oder Anforderer hackt schon
+  | 'wrongCode'
+  | 'timeout'
+  | 'aborted';
+
+// Bei abgelehntem hackStart (invalidTarget/outOfRange/alreadyHacking) gibt es
+// noch keine Challenge - dann ist hackId der Leerstring.
+export interface HackResultMessage {
+  type: 'hackResult';
+  hackId: string;
+  targetId: EntityId;
+  success: boolean;
+  reason?: HackFailReason;
+}
+
+export type ServerMessage = ServerHello | StateUpdate | HackChallengeMessage | HackResultMessage;
 
 // ServerHello enthaelt ein ArrayBuffer (Terrain-Raster), das JSON.stringify
 // nicht abbilden kann (wird sonst stillschweigend zu "{}"). Deshalb hier
@@ -117,4 +151,30 @@ export interface StartMissionCommand {
   missionId: string;
 }
 
-export type ClientCommand = MoveCommand | AttackCommand | TerminalCommand | SelectMapCommand | StartMissionCommand;
+// Hacking-Minispiel: Start-Anfrage, Code-Eingabe und Abbruch (Gegenstuecke
+// zu HackChallengeMessage/HackResultMessage oben).
+export interface HackStartCommand {
+  type: 'hackStart';
+  targetId: EntityId;
+}
+
+export interface HackAttemptCommand {
+  type: 'hackAttempt';
+  hackId: string;
+  answer: string;
+}
+
+export interface HackAbortCommand {
+  type: 'hackAbort';
+  hackId: string;
+}
+
+export type ClientCommand =
+  | MoveCommand
+  | AttackCommand
+  | TerminalCommand
+  | SelectMapCommand
+  | StartMissionCommand
+  | HackStartCommand
+  | HackAttemptCommand
+  | HackAbortCommand;

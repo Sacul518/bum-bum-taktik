@@ -316,8 +316,16 @@ Diese Aufteilung folgt bewusst den Ordnergrenzen, damit zwei Subagenten möglich
 **Phase 3 — Erweiterte Features**
 - Sonar (U-Boote), elektronische Kampfführung/Jamming
 - Luft-Domain (Flugzeuge/Drohnen), Luftschläge
-- In-Game-Terminal + Hacking-Minispiel
+- In-Game-Terminal ✅ + Hacking-Minispiel ✅ *(siehe Kasten unten)*
 - Wärmebild-/Nachtsicht-Overlays
+
+> **Hacking-Minispiel — entschieden & umgesetzt (2026-07-12):** Umsetzung: `server/src/hacking.ts` (Challenges, Fristen, Stun, Alarm), Stun-Verhalten in `server/src/gameLoop.ts` (`stunnedMs`), Terminal-Befehl `client/src/terminal/commands/hack.ts` mit Line-Interceptor in `terminal/registry.ts`, türkiser Stun-Balken in `client/src/render/units.ts`. Serverseitig mit 9 Headless-WebSocket-Tests verifiziert (alle Ablehnungsgründe, Erfolg+Stun+Ablauf, Timeout).
+> - **Ablauf:** `hack <zielId>` im Terminal → Server validiert (Ziel ist sichtbarer Feind, mindestens eine eigene Einheit in `HACK_RANGE` = 12 Kacheln) → Server schickt **nur dem Anforderer** eine `hackChallenge`: einen Zugriffscode aus 4 Hex-Bytes (z. B. `A3 F0 7C 21`) mit 12 s Zeitlimit → Spieler tippt den Code im Terminal nach (Vergleich case-insensitiv, Leerzeichen egal) → `hackResult`.
+> - **Erfolg:** Ziel ist 8 s **lahmgelegt** (bewegt sich nicht, schießt nicht) — steht als `stunned` im Snapshot, damit alle Clients es anzeigen können. **Fehlschlag/Timeout:** das Ziel ist alarmiert und nimmt sofort die nächste Spieler-Einheit ins Visier (Risiko statt Bestrafungs-Cooldown).
+> - **Warum Code-Nachtippen statt Rätsel/Mastermind:** in V1 zählt der Spannungsbogen (Zeitdruck), nicht die Denksportaufgabe — trivial zu generieren und serverseitig zu prüfen, für Anfänger sofort verständlich, und die Schwierigkeit hängt an zwei Konstanten (`HACK_CODE_BYTES`, `HACK_TIME_LIMIT_MS`) statt an einem Puzzle-Generator. Anspruchsvollere Challenges können die `hackChallenge`-Nachricht später erweitern, ohne das Protokoll umzubauen.
+> - **Balance-Dreieck:** `HACK_RANGE` (12) > Waffen-Reichweite (max. 8), aber < `ENEMY_AGGRO_RANGE` (14) — man kann außerhalb des Feuerbereichs hacken, riskiert aber Aggro.
+> - **Regeln:** pro Ziel und pro Anforderer max. ein laufender Hack (`alreadyHacking`); Abbruch durch Eingabe von `abbruch` (schickt `hackAbort`). Der Server prüft Timeouts im Tick und meldet sie aktiv.
+> - **Terminal-Mechanik:** während eines laufenden Hacks fängt ein **Line-Interceptor** in der Befehls-Registry die nächste Eingabezeile ab (sie geht an den Hack statt an die Befehlssuche) — der schon in Abschnitt 6 angelegte Erweiterungspunkt.
 
 **Phase 4 — Politur & Lasttest**
 - Echter Lasttest: Raspberry Pi 4 + 6 physische iPads gleichzeitig im selben WLAN

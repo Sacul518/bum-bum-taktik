@@ -24,4 +24,10 @@ export interface EntitySnapshot {
   hp: number;
   /** Verbleibende Wegpunkte in Weltkoordinaten, naechster zuerst - fuer den Path-Tracker im Client. */
   path: Vector2[];
+  /**
+   * Einheit ist durch einen erfolgreichen Hack lahmgelegt (bewegt sich nicht,
+   * schiesst nicht) - docs/KONZEPT.md Abschnitt 9, Phase 3. Optional statt
+   * immer false, damit die Snapshots im Normalfall nicht groesser werden.
+   */
+  stunned?: boolean;
 }
