@@ -2,18 +2,17 @@ import * as THREE from 'three';
 import type { UnitType } from '@bum-bum-taktik/shared';
 import tankSpriteUrl from '../../../../assets/sprites/land/tank.png';
 import infantrySpriteUrl from '../../../../assets/sprites/infantry/infantry.png';
+import boatSpriteUrl from '../../../../assets/sprites/water/boat.png';
+import planeSpriteUrl from '../../../../assets/sprites/air/plane.png';
 
 // Textur-Atlas fuer Einheiten-Sprites (docs/KONZEPT.md Abschnitte 4 und 7):
 // alle Einheitentypen liegen als Kacheln in EINER Textur, damit saemtliche
 // Einheiten dasselbe Material teilen koennen - Voraussetzung fuer das spaeter
 // geplante Sprite-Instancing (ein Draw-Call pro Einheitentyp).
 //
-// tank und infantry nutzen inzwischen echte CC0-Sprites (siehe
-// assets/ATTRIBUTION.md). boat/plane sind noch Platzhalter, die beim Start
-// in dasselbe Canvas gezeichnet werden - fuer Schiffe/Flugzeuge ist noch
-// keine CC0-Quelle bestaetigt (KONZEPT Abschnitt 7: nicht raten!). Sobald
-// weitere Assets ausgewaehlt sind, reicht ein weiterer REAL_SPRITES-Eintrag
-// unten - Regionen-Zuordnung und units.ts bleiben unveraendert.
+// Alle vier Einheitentypen nutzen inzwischen echte CC0-Sprites (siehe
+// assets/ATTRIBUTION.md), aus demselben PixVoxel-Wargame-Paket wie die
+// Infanterie.
 
 /** Kantenlaenge einer Atlas-Kachel in Pixeln. */
 export const ATLAS_TILE_PX = 64;
@@ -48,73 +47,28 @@ export function getUnitUvRect(unitType: UnitType): UvRect {
   };
 }
 
-// Alle Zeichenfunktionen malen in Draufsicht mit Fahrtrichtung nach rechts
-// (+Canvas-x). Zusammen mit dem UV-Mapping in units.ts zeigt ein Sprite mit
+// Alle Sprites landen in Draufsicht mit Fahrtrichtung nach rechts (+Canvas-x)
+// im Atlas. Zusammen mit dem UV-Mapping in units.ts zeigt ein Sprite mit
 // heading 0 dadurch in Welt-+X - dieselbe Konvention wie die bisherige
 // Platzhalter-Geometrie (applySnapshot dreht die Gruppe um heading).
-// Der Ursprung liegt beim Aufruf jeweils in der Kachelmitte.
-
-function drawBoat(ctx: CanvasRenderingContext2D): void {
-  // Rumpf mit spitzem Bug nach rechts, Aufbau als helleres Deckshaus.
-  ctx.fillStyle = '#1a1a1a';
-  ctx.beginPath();
-  ctx.moveTo(28, 0);
-  ctx.lineTo(12, -10);
-  ctx.lineTo(-24, -10);
-  ctx.lineTo(-28, 0);
-  ctx.lineTo(-24, 10);
-  ctx.lineTo(12, 10);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#4a4a4a';
-  ctx.fillRect(-14, -5, 20, 10);
-}
-
-function drawPlane(ctx: CanvasRenderingContext2D): void {
-  // Rumpf, gepfeilte Tragflaechen, Heckleitwerk - Nase nach rechts.
-  ctx.fillStyle = '#dd2222';
-  ctx.beginPath();
-  ctx.moveTo(28, 0);
-  ctx.lineTo(18, -4);
-  ctx.lineTo(-22, -4);
-  ctx.lineTo(-26, 0);
-  ctx.lineTo(-22, 4);
-  ctx.lineTo(18, 4);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(6, 0);
-  ctx.lineTo(-10, -24);
-  ctx.lineTo(-16, -24);
-  ctx.lineTo(-6, 0);
-  ctx.lineTo(-16, 24);
-  ctx.lineTo(-10, 24);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#a81a1a';
-  ctx.beginPath();
-  ctx.moveTo(-18, 0);
-  ctx.lineTo(-26, -10);
-  ctx.lineTo(-26, 10);
-  ctx.closePath();
-  ctx.fill();
-}
-
-// tank und infantry haben jetzt echte Sprites (siehe REAL_SPRITES) und
-// brauchen deshalb keinen Eintrag mehr in dieser Platzhalter-Tabelle.
-const SPRITE_DRAWERS: Record<Exclude<UnitType, 'tank' | 'infantry'>, (ctx: CanvasRenderingContext2D) => void> = {
-  boat: drawBoat,
-  plane: drawPlane,
-};
-
+//
 // Echte Sprite-Bilder je Einheitentyp, mit der Drehung, die noetig ist, um
-// die Quelle auf unsere Konvention "Fahrtrichtung nach rechts" zu bringen
-// (siehe Kommentar oben). rotation in Radiant, im Uhrzeigersinn.
-const REAL_SPRITES: Partial<Record<UnitType, { url: string; rotation: number }>> = {
+// die Quelle auf diese Konvention zu bringen. rotation in Radiant, im
+// Uhrzeigersinn.
+const REAL_SPRITES: Record<UnitType, { url: string; rotation: number }> = {
   // Kenneys Panzer zeigt den Kanonenlauf nach unten (+Canvas-y) -> -90°.
   tank: { url: tankSpriteUrl, rotation: -Math.PI / 2 },
   // PixVoxel face3 zeigt bereits nach rechts -> keine Drehung noetig.
   infantry: { url: infantrySpriteUrl, rotation: 0 },
+  // Boat_Large face3 zeigt wie Infanterie/Panzer bereits nach rechts (Bug/
+  // Turm-Asymmetrie rechts, per Pixel-Vergleich mit dem eindeutig orientierten
+  // Tank-Sprite verifiziert) -> keine Drehung noetig.
+  boat: { url: boatSpriteUrl, rotation: 0 },
+  // Sonderfall: bei Plane_P zeigt face3 die Nase nach LINKS (Schattenriss und
+  // Nasen-Marker eindeutig links, anders als bei den Boden-/Wassereinheiten
+  // dieses Pakets) - deshalb hier face1 statt face3 als Quelle verwendet,
+  // face1 zeigt bereits nach rechts. Keine Drehung noetig.
+  plane: { url: planeSpriteUrl, rotation: 0 },
 };
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -142,10 +96,9 @@ function drawFittedImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement)
 }
 
 /**
- * Zeichnet den Einheiten-Atlas einmalig in ein Canvas (echte Sprites +
- * verbleibende Platzhalter) und liefert ihn als Textur. Nur einmal pro
- * Anwendung aufrufen und die Textur teilen - siehe Material-Cache in
- * units.ts.
+ * Zeichnet den Einheiten-Atlas einmalig in ein Canvas (alle vier Einheiten
+ * als echte Sprites) und liefert ihn als Textur. Nur einmal pro Anwendung
+ * aufrufen und die Textur teilen - siehe Material-Cache in units.ts.
  */
 export async function createUnitAtlasTexture(): Promise<THREE.Texture> {
   const canvas = document.createElement('canvas');
@@ -165,17 +118,9 @@ export async function createUnitAtlasTexture(): Promise<THREE.Texture> {
     ctx.restore();
   });
 
-  for (const unitType of Object.keys(SPRITE_DRAWERS) as Exclude<UnitType, 'tank' | 'infantry'>[]) {
-    ctx.save();
-    ctx.translate(ATLAS_COLUMN[unitType] * ATLAS_TILE_PX + ATLAS_TILE_PX / 2, ATLAS_TILE_PX / 2);
-    SPRITE_DRAWERS[unitType](ctx);
-    ctx.restore();
-  }
-
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  // Platzhalter (spaeter Pixel-Art) sollen beim Heranzoomen scharfkantig
-  // bleiben statt zu verwaschen.
+  // Pixel-Art soll beim Heranzoomen scharfkantig bleiben statt zu verwaschen.
   texture.magFilter = THREE.NearestFilter;
   return texture;
 }
