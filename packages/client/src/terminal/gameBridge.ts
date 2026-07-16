@@ -5,6 +5,7 @@ import type {
   HackChallengeMessage,
   HackResultMessage,
   MapPresetId,
+  ReconResultMessage,
 } from '@bum-bum-taktik/shared';
 
 // Bruecke zwischen Terminal-Befehlen und dem Spiel in main.ts: die Befehle
@@ -74,4 +75,17 @@ export function onHackMessage(handler: (message: HackServerMessage) => void): vo
 
 export function deliverHackMessage(message: HackServerMessage): void {
   hackMessageHandler?.(message);
+}
+
+// Aufklaerungs-Sweep (docs/KONZEPT.md Abschnitt 6): reconResult ist die
+// direkte Server-Antwort an den Anforderer - gleiche Bruecken-Idee wie beim
+// Hacking, nur ohne mehrstufigen Dialog.
+let reconResultHandler: ((message: ReconResultMessage) => void) | null = null;
+
+export function onReconResult(handler: (message: ReconResultMessage) => void): void {
+  reconResultHandler = handler;
+}
+
+export function deliverReconResult(message: ReconResultMessage): void {
+  reconResultHandler?.(message);
 }

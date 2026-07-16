@@ -7,5 +7,6 @@ import './exit.js';
 import './hack.js';
 import './map.js';
 import './missions.js';
+import './recon.js';
 import './select.js';
 import './units.js';

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { VISION_RANGE, type EntitySnapshot } from '@bum-bum-taktik/shared';
+import { VISION_RANGE, type EntitySnapshot, type ReconZone } from '@bum-bum-taktik/shared';
 import { HEIGHT_SCALE } from './terrain.js';
 
 // Fog of War (docs/KONZEPT.md Abschnitt 9, Phase 2): eine Ebene ueber der
@@ -17,7 +17,10 @@ const HEIGHT_ABOVE_TERRAIN = 0.5;
 
 export interface FogOverlay {
   mesh: THREE.Mesh;
-  update(units: ReadonlyArray<Pick<EntitySnapshot, 'x' | 'y' | 'unitType' | 'faction'>>): void;
+  update(
+    units: ReadonlyArray<Pick<EntitySnapshot, 'x' | 'y' | 'unitType' | 'faction'>>,
+    reconZones?: ReadonlyArray<ReconZone>,
+  ): void;
   dispose(): void;
 }
 
@@ -64,38 +67,49 @@ export function createFogOverlay(mapWidth: number, mapHeight: number): FogOverla
   // Einheiten-Pass) und die Fog-Ebene danach nur transparent darueberblendet.
   mesh.renderOrder = 10;
 
-  function update(units: ReadonlyArray<Pick<EntitySnapshot, 'x' | 'y' | 'unitType' | 'faction'>>): void {
+  // Stanzt einen aufgehellten Kreis in die Verdunkelung. Erwartet
+  // Weltkoordinaten und rechnet sie in den Kachel-Raum um: X wie in
+  // sampleElevation() (render/terrain.ts); Y gespiegelt, weil Textur-Zeile 0
+  // an z = +height/2 liegt (siehe Kommentar bei der Geometrie oben).
+  function punchCircle(worldX: number, worldY: number, radius: number): void {
+    const cx = worldX + mapWidth / 2;
+    const cy = mapHeight / 2 - worldY;
+    const radiusSq = radius * radius;
+
+    // Nur den Bounding-Box-Bereich durchlaufen, nicht die ganze Karte -
+    // wichtig fuer die Performance bei mehreren Dutzend Einheiten auf einer
+    // 500x500-Karte.
+    const minX = Math.max(0, Math.floor(cx - radius));
+    const maxX = Math.min(mapWidth - 1, Math.ceil(cx + radius));
+    const minY = Math.max(0, Math.floor(cy - radius));
+    const maxY = Math.min(mapHeight - 1, Math.ceil(cy + radius));
+
+    for (let ty = minY; ty <= maxY; ty++) {
+      for (let tx = minX; tx <= maxX; tx++) {
+        const dx = tx + 0.5 - cx;
+        const dy = ty + 0.5 - cy;
+        if (dx * dx + dy * dy > radiusSq) continue;
+        data[(ty * mapWidth + tx) * 4 + 3] = 0;
+      }
+    }
+  }
+
+  function update(
+    units: ReadonlyArray<Pick<EntitySnapshot, 'x' | 'y' | 'unitType' | 'faction'>>,
+    reconZones: ReadonlyArray<ReconZone> = [],
+  ): void {
     // Erst alles verdunkeln - nur die Alpha-Bytes anfassen, R/G/B bleiben 0.
     for (let i = 3; i < data.length; i += 4) data[i] = DARK_ALPHA_BYTE;
 
     for (const unit of units) {
       if (unit.faction !== 'player') continue;
-      const radius = VISION_RANGE[unit.unitType];
+      punchCircle(unit.x, unit.y, VISION_RANGE[unit.unitType]);
+    }
 
-      // Weltkoordinaten -> Kachel-Raum, als Fliesskommazahl fuer den
-      // praezisen euklidischen Kreistest. X wie in sampleElevation()
-      // (render/terrain.ts); Y gespiegelt, weil Textur-Zeile 0 an
-      // z = +height/2 liegt (siehe Kommentar bei der Geometrie oben).
-      const cx = unit.x + mapWidth / 2;
-      const cy = mapHeight / 2 - unit.y;
-      const radiusSq = radius * radius;
-
-      // Nur den Bounding-Box-Bereich der Einheit durchlaufen, nicht die
-      // ganze Karte - wichtig fuer die Performance bei mehreren Dutzend
-      // Einheiten auf einer 500x500-Karte.
-      const minX = Math.max(0, Math.floor(cx - radius));
-      const maxX = Math.min(mapWidth - 1, Math.ceil(cx + radius));
-      const minY = Math.max(0, Math.floor(cy - radius));
-      const maxY = Math.min(mapHeight - 1, Math.ceil(cy + radius));
-
-      for (let ty = minY; ty <= maxY; ty++) {
-        for (let tx = minX; tx <= maxX; tx++) {
-          const dx = tx + 0.5 - cx;
-          const dy = ty + 0.5 - cy;
-          if (dx * dx + dy * dy > radiusSq) continue;
-          data[(ty * mapWidth + tx) * 4 + 3] = 0;
-        }
-      }
+    // Aufklaerungs-Sweeps (Abschnitt 6): derselbe Bereich, den der Server
+    // fuer die Feind-Sichtbarkeit nutzt, wird auch optisch aufgehellt.
+    for (const zone of reconZones) {
+      punchCircle(zone.x, zone.y, zone.radius);
     }
 
     texture.needsUpdate = true;

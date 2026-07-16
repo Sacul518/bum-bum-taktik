@@ -1,4 +1,4 @@
-import { VISION_RANGE, type EntityId, type EntitySnapshot, type ShotEvent } from '@bum-bum-taktik/shared';
+import { VISION_RANGE, type EntityId, type EntitySnapshot, type ReconZone, type ShotEvent } from '@bum-bum-taktik/shared';
 
 // Fog of War (docs/KONZEPT.md Abschnitt 9, Phase 2): Koop = geteilte Sicht,
 // darum EIN gefiltertes Paket fuer alle Clients statt pro Spieler eigene
@@ -8,9 +8,11 @@ import { VISION_RANGE, type EntityId, type EntitySnapshot, type ShotEvent } from
 // Muendungsfeuer verraet die Position, sonst waeren deren ShotEvents Tracer
 // aus dem Nichts (die Schuss-Events selbst werden nicht gefiltert, siehe
 // index.ts - nur welche Feind-Entities im "entities"-Snapshot auftauchen).
+// Zusaetzlich sichtbar: Feinde in einem aktiven Aufklaerungs-Sweep (recon.ts).
 export function filterVisibleEntities(
   entities: EntitySnapshot[],
   shots: ShotEvent[],
+  reconZones: ReconZone[] = [],
 ): { entities: EntitySnapshot[]; visibleEnemyIds: EntityId[] } {
   const players = entities.filter((entity) => entity.faction === 'player');
   const enemies = entities.filter((entity) => entity.faction === 'enemy');
@@ -18,6 +20,7 @@ export function filterVisibleEntities(
 
   const visibleEnemies = enemies.filter((enemy) => {
     if (firedThisTick.has(enemy.id)) return true;
+    if (reconZones.some((zone) => Math.hypot(enemy.x - zone.x, enemy.y - zone.y) <= zone.radius)) return true;
     return players.some((player) => Math.hypot(enemy.x - player.x, enemy.y - player.y) <= VISION_RANGE[player.unitType]);
   });
 

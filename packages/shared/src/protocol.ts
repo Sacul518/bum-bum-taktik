@@ -29,6 +29,16 @@ export interface ShotEvent {
   toY: number;
 }
 
+// Aktiver Aufklaerungs-Sweep (docs/KONZEPT.md Abschnitt 6, "recon"): der
+// Bereich zaehlt fuer die Dauer des Sweeps als eingesehen - der Server nutzt
+// ihn fuer die Feind-Filterung, der Client hellt denselben Bereich im
+// Fog-of-War-Overlay auf.
+export interface ReconZone {
+  x: number;
+  y: number;
+  radius: number;
+}
+
 // Server -> Client, pro Tick
 export interface StateUpdate {
   type: 'state';
@@ -36,6 +46,8 @@ export interface StateUpdate {
   entities: EntitySnapshot[];
   shots: ShotEvent[];
   visibleEnemyIds: EntityId[]; // Fog-of-War: nur was das Team gerade sieht
+  /** Nur gesetzt, solange mindestens ein Aufklaerungs-Sweep aktiv ist. */
+  reconZones?: ReconZone[];
 }
 
 // --- Hacking-Minispiel (docs/KONZEPT.md Abschnitt 9, Phase 3) ---
@@ -72,7 +84,23 @@ export interface HackResultMessage {
   reason?: HackFailReason;
 }
 
-export type ServerMessage = ServerHello | StateUpdate | HackChallengeMessage | HackResultMessage;
+// Missionsende (docs/KONZEPT.md Abschnitt 3.2): der Server broadcastet das
+// Ergebnis genau einmal, sobald alle Feinde ("won") bzw. alle eigenen
+// Einheiten ("lost") zerstoert sind. Die Welt laeuft danach weiter (kein
+// Zwangs-Reset) - ein neuer "mission start"/"map select" raeumt auf.
+export interface MissionEndMessage {
+  type: 'missionEnd';
+  missionId: string;
+  outcome: 'won' | 'lost';
+}
+
+export type ServerMessage =
+  | ServerHello
+  | StateUpdate
+  | HackChallengeMessage
+  | HackResultMessage
+  | MissionEndMessage
+  | ReconResultMessage;
 
 // ServerHello enthaelt ein ArrayBuffer (Terrain-Raster), das JSON.stringify
 // nicht abbilden kann (wird sonst stillschweigend zu "{}"). Deshalb hier
@@ -169,6 +197,23 @@ export interface HackAbortCommand {
   hackId: string;
 }
 
+// Aufklaerungs-Sweep anfordern (docs/KONZEPT.md Abschnitt 6). Der Server
+// prueft Radius-Limit und Team-Abklingzeit und antwortet dem Anforderer mit
+// reconResult; der aktive Sweep selbst steht fuer alle in StateUpdate.
+export interface ReconCommand {
+  type: 'recon';
+  x: number;
+  y: number;
+  radius: number;
+}
+
+export interface ReconResultMessage {
+  type: 'reconResult';
+  accepted: boolean;
+  /** Bei Ablehnung wegen Abklingzeit: Restdauer in ms, sonst 0. */
+  remainingCooldownMs: number;
+}
+
 export type ClientCommand =
   | MoveCommand
   | AttackCommand
@@ -177,4 +222,5 @@ export type ClientCommand =
   | StartMissionCommand
   | HackStartCommand
   | HackAttemptCommand
-  | HackAbortCommand;
+  | HackAbortCommand
+  | ReconCommand;

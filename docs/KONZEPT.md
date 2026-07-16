@@ -327,6 +327,10 @@ Diese Aufteilung folgt bewusst den Ordnergrenzen, damit zwei Subagenten möglich
 > - **Regeln:** pro Ziel und pro Anforderer max. ein laufender Hack (`alreadyHacking`); Abbruch durch Eingabe von `abbruch` (schickt `hackAbort`). Der Server prüft Timeouts im Tick und meldet sie aktiv.
 > - **Terminal-Mechanik:** während eines laufenden Hacks fängt ein **Line-Interceptor** in der Befehls-Registry die nächste Eingabezeile ab (sie geht an den Hack statt an die Befehlssuche) — der schon in Abschnitt 6 angelegte Erweiterungspunkt.
 
+> **Recon-Sweep & Missionsende — entschieden & umgesetzt (2026-07-12):**
+> - **`recon <x> <y> [radius]`** (Abschnitt 6): deckt den Bereich 10 s lang auf — Feinde darin werden gesendet (`server/src/recon.ts` + Erweiterung von `visibility.ts`), der Client hellt denselben Bereich im FoW-Overlay auf (`reconZones` im `StateUpdate`). Danach 60 s **Team-Cooldown** (Koop = geteilte Fähigkeit, sonst hielten sechs iPads die Karte dauerhaft offen). Radius default 15, max 25 (geklemmt statt abgelehnt). Kartenwechsel räumt Sweeps ab, lässt den Cooldown aber bewusst laufen (kein Reset-Trick über Missionsneustart).
+> - **Missionsende** (Abschnitt 3.2): der Server prüft pro Tick bei aktiver Mission, ob alle Feinde (**won**) oder alle Spieler-Einheiten (**lost**) zerstört sind, und broadcastet einmalig `missionEnd`; das Terminal meldet das Ergebnis. Die Welt läuft danach weiter — Aufräumen übernimmt der nächste `mission start`/`map select`. Beide Seiten gleichzeitig tot zählt als Sieg (die Mission war, die Feinde loszuwerden).
+
 **Phase 4 — Politur & Lasttest**
 - Echter Lasttest: Raspberry Pi 4 + 6 physische iPads gleichzeitig im selben WLAN
 - Asset-Optimierung (Atlas-Größe, Ladezeiten)

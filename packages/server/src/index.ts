@@ -20,6 +20,7 @@ import {
 import { advanceUnits, getUnits, initUnits, setAttackTarget, setUnitTargets } from './gameLoop.js';
 import { filterVisibleEntities } from './visibility.js';
 import { abortHack, attemptHack, clearAllHacks, expireTimedOutHacks, startHack } from './hacking.js';
+import { activeReconZones, clearReconZones, requestRecon } from './recon.js';
 
 // Start-Preset per Umgebungsvariable waehlbar (MAP_PRESET=meer npm run dev);
 // danach wechselbar per selectMap-Befehl aus dem Terminal (docs/KONZEPT.md
@@ -43,13 +44,20 @@ let walkability: WalkabilityGrids;
 // Aufstellung. selectMap setzt sie zurueck, startMission setzt sie.
 let activeMissionId: string | null = null;
 
+// Sperrt die Siegpruefung, sobald das Ergebnis einmal gemeldet wurde - die
+// Welt laeuft nach Missionsende weiter, sonst wuerde missionEnd jeden Tick
+// erneut gesendet.
+let missionEnded = false;
+
 function switchMap(presetId: MapPresetId, setup?: MissionUnitSetup[]): void {
   const preset = MAP_PRESETS[presetId];
   currentPresetId = presetId;
   map = generatePresetMap(presetId);
   walkability = computeWalkability(map);
-  // Laufende Hacks zeigen nach dem Einheiten-Neuaufbau ins Leere.
+  // Laufende Hacks/Sweeps zeigen nach dem Einheiten-Neuaufbau ins Leere.
   clearAllHacks();
+  clearReconZones();
+  missionEnded = false;
   initUnits(walkability, setup);
   console.log(`Karte generiert: Preset "${preset.name}" (${map.width}x${map.height}, Seed ${preset.gen.seed ?? 1})`);
 }
@@ -141,6 +149,15 @@ wss.on('connection', (socket) => {
       } else if (command.type === 'hackAbort') {
         const result = abortHack(String(command.hackId), playerId);
         if (result) socket.send(encodeServerMessage(result));
+      } else if (command.type === 'recon') {
+        // Zahlen kommen als JSON von aussen - NaN o. ae. abfangen, bevor der
+        // Sweep in den Sichtbarkeits-Vergleich wandert.
+        const { x, y, radius } = command;
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(radius)) {
+          console.error('recon mit ungueltigen Koordinaten ignoriert');
+          return;
+        }
+        socket.send(encodeServerMessage(requestRecon(x, y, radius)));
       }
     } catch (err) {
       console.error('Ungueltiger Client-Befehl:', err);
@@ -174,13 +191,36 @@ setInterval(() => {
   }
 
   const { entities, shots } = advanceUnits();
-  const { entities: visibleEntities, visibleEnemyIds } = filterVisibleEntities(entities, shots);
+
+  // Siegpruefung (docs/KONZEPT.md Abschnitt 3.2): nur bei aktiver Mission und
+  // nur bis zum ersten Ergebnis. Beide Seiten weg (theoretisch moeglich, wenn
+  // die letzten Einheiten sich im selben Tick gegenseitig zerstoeren) zaehlt
+  // als Sieg - die Mission war, die Feinde loszuwerden.
+  if (activeMissionId && !missionEnded) {
+    const playersAlive = entities.some((entity) => entity.faction === 'player');
+    const enemiesAlive = entities.some((entity) => entity.faction === 'enemy');
+    if (!playersAlive || !enemiesAlive) {
+      missionEnded = true;
+      const payload = encodeServerMessage({
+        type: 'missionEnd',
+        missionId: activeMissionId,
+        outcome: enemiesAlive ? 'lost' : 'won',
+      });
+      for (const client of wss.clients) {
+        if (client.readyState === client.OPEN) client.send(payload);
+      }
+    }
+  }
+
+  const reconZones = activeReconZones();
+  const { entities: visibleEntities, visibleEnemyIds } = filterVisibleEntities(entities, shots, reconZones);
   const state: StateUpdate = {
     type: 'state',
     tick,
     entities: visibleEntities,
     shots,
     visibleEnemyIds,
+    ...(reconZones.length > 0 ? { reconZones } : {}),
   };
   const payload = encodeServerMessage(state);
   for (const client of wss.clients) {

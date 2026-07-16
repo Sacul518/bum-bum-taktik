@@ -65,6 +65,14 @@ export const HACK_TIME_LIMIT_MS = 12_000;
 export const HACK_STUN_MS = 8_000;
 export const HACK_CODE_BYTES = 4;
 
+// Aufklaerungs-Sweep "recon" (docs/KONZEPT.md Abschnitt 6): deckt einen
+// Kartenbereich voruebergehend auf (Fog of War + Feind-Sichtbarkeit), danach
+// Abklingzeit fuers ganze Team. Startwerte fuers Balancing.
+export const RECON_RADIUS_DEFAULT = 15;
+export const RECON_RADIUS_MAX = 25;
+export const RECON_DURATION_MS = 10_000;
+export const RECON_COOLDOWN_MS = 60_000;
+
 // Schwellenwerte fuer den Hoehenwert e (-1..1) aus der Terrain-Generierung,
 // siehe docs/KONZEPT.md Abschnitt 3.
 export const ELEVATION_THRESHOLDS = {

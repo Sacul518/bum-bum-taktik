@@ -25,6 +25,7 @@ import {
   bindGameCommands,
   bindSelection,
   deliverHackMessage,
+  deliverReconResult,
   getCurrentPreset,
   setCurrentPreset,
 } from './terminal/gameBridge.js';
@@ -189,7 +190,7 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
 
       // Fog + Minimap nur pro Server-Tick (12 Hz) aktualisieren, nicht pro
       // Frame - beide arbeiten direkt auf den Snapshot-Positionen.
-      fogOverlay?.update(message.entities);
+      fogOverlay?.update(message.entities, message.reconZones ?? []);
       minimap.update(message.entities);
 
       // Zerstoerte Einheiten (nicht mehr im Snapshot) aus der Szene entfernen.
@@ -216,6 +217,29 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
     // gehoeren in den hack-Terminalbefehl - Zustellung ueber die gameBridge.
     if (message.type === 'hackChallenge' || message.type === 'hackResult') {
       deliverHackMessage(message);
+      return;
+    }
+
+    // Antwort auf den recon-Terminalbefehl - gleiche Bruecke wie beim Hacking.
+    if (message.type === 'reconResult') {
+      deliverReconResult(message);
+      return;
+    }
+
+    // Missionsende (docs/KONZEPT.md Abschnitt 3.2): kommt genau einmal pro
+    // Mission. Terminal oeffnen, damit die Meldung nicht untergeht, wenn es
+    // gerade geschlossen ist.
+    if (message.type === 'missionEnd') {
+      const mission = getMission(message.missionId);
+      const name = mission?.name ?? message.missionId;
+      terminal.print('');
+      terminal.print(
+        message.outcome === 'won'
+          ? `MISSION ERFUELLT: ${name} - alle Feinde zerstoert.`
+          : `MISSION GESCHEITERT: ${name} - alle eigenen Einheiten verloren.`,
+      );
+      terminal.print('Weiter geht es mit "mission start <id>" oder "map select <id>".');
+      terminal.open();
     }
   },
 });
