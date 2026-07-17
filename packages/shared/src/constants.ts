@@ -1,4 +1,4 @@
-import type { Domain, UnitType } from './types.js';
+import type { Domain, ProjectileKind, UnitType } from './types.js';
 
 export const TICK_RATE_HZ = 12;
 export const TICK_INTERVAL_MS = 1000 / TICK_RATE_HZ;
@@ -17,22 +17,55 @@ export const UNIT_DOMAIN: Record<UnitType, Domain> = {
   plane: 'air',
 };
 
-// Kampfwerte pro Einheitentyp (docs/KONZEPT.md Abschnitt 9, Phase 2).
-// Reichweite in Kacheln, Feuerpause in Millisekunden. Startwerte fuers
-// Balancing - werden nach ersten Testgefechten angepasst.
-export interface CombatStats {
-  maxHp: number;
+// Lebenspunkte pro Einheitentyp (docs/KONZEPT.md Abschnitt 9, Phase 2).
+export const MAX_HP: Record<UnitType, number> = {
+  tank: 100,
+  infantry: 60,
+  boat: 120,
+  plane: 80,
+};
+
+// Waffensystem (Aufgabe "3D-Modelle & Waffen-System"): jede Einheit hat
+// genau EINE Waffe mit eigenem Verhalten. "targets" legt fest, welche
+// Domains die Waffe ueberhaupt treffen kann - ein Panzer kann z. B. nicht
+// auf Flugzeuge schiessen. "bonusVs" ist ein Schadens-Multiplikator gegen
+// bestimmte Einheitentypen. Reichweite in Kacheln, Feuerpause in ms.
+// Startwerte fuers Balancing - werden nach Testgefechten angepasst.
+export interface WeaponProfile {
+  name: string;
   range: number;
   damage: number;
   cooldownMs: number;
+  /** Domains, die diese Waffe treffen kann. */
+  targets: readonly Domain[];
+  /** Schadens-Multiplikator gegen bestimmte Ziel-Typen (fehlt = 1.0). */
+  bonusVs?: Partial<Record<UnitType, number>>;
+  /** Tracer-Optik im Client. */
+  projectile: ProjectileKind;
 }
 
-export const COMBAT_STATS: Record<UnitType, CombatStats> = {
-  tank: { maxHp: 100, range: 6, damage: 25, cooldownMs: 2000 },
-  infantry: { maxHp: 60, range: 4, damage: 8, cooldownMs: 1000 },
-  boat: { maxHp: 120, range: 8, damage: 30, cooldownMs: 2500 },
-  plane: { maxHp: 80, range: 5, damage: 15, cooldownMs: 1500 },
+export const WEAPONS: Record<UnitType, WeaponProfile> = {
+  // Panzerkanone: panzerbrechend, aber machtlos gegen Luftziele.
+  tank: { name: 'Kanone', range: 6, damage: 25, cooldownMs: 2000, targets: ['land', 'water'], bonusVs: { tank: 1.4 }, projectile: 'shell' },
+  // Sturmgewehr: schwach, aber schnell; kann als einzige Bodenwaffe auch
+  // (notduerftig) auf Flugzeuge halten - macht Infanterie zur Flugabwehr.
+  infantry: { name: 'Sturmgewehr', range: 4, damage: 8, cooldownMs: 1000, targets: ['land', 'air'], bonusVs: { infantry: 1.5 }, projectile: 'bullet' },
+  // Schiffsgeschuetz: groesste Reichweite, langsamer Nachlademodus.
+  boat: { name: 'Schiffsgeschuetz', range: 8, damage: 30, cooldownMs: 2500, targets: ['land', 'water'], projectile: 'shell' },
+  // Luft-Boden-Raketen: trifft alles, besonders wirksam gegen Schiffe.
+  plane: { name: 'Raketen', range: 5, damage: 15, cooldownMs: 1500, targets: ['land', 'water', 'air'], bonusVs: { boat: 1.5 }, projectile: 'rocket' },
 };
+
+/** Kann dieser Angreifer-Typ diesen Ziel-Typ ueberhaupt treffen? */
+export function canTarget(attacker: UnitType, target: UnitType): boolean {
+  return WEAPONS[attacker].targets.includes(UNIT_DOMAIN[target]);
+}
+
+/** Effektiver Schaden inkl. bonusVs-Multiplikator, auf ganze HP gerundet. */
+export function weaponDamage(attacker: UnitType, target: UnitType): number {
+  const weapon = WEAPONS[attacker];
+  return Math.round(weapon.damage * (weapon.bonusVs?.[target] ?? 1));
+}
 
 // Sichtweite in Kacheln pro Einheitentyp - Grundlage fuer Fog of War
 // (docs/KONZEPT.md Abschnitt 9, Phase 2): der Server schickt Feind-Einheiten

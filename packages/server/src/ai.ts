@@ -1,4 +1,4 @@
-import { ENEMY_AGGRO_RANGE } from '@bum-bum-taktik/shared';
+import { ENEMY_AGGRO_RANGE, canTarget } from '@bum-bum-taktik/shared';
 import type { UnitState } from './gameLoop.js';
 
 // Gegner-KI (docs/KONZEPT.md Abschnitt 9, Phase 2): reine Ziel-Erfassung,
@@ -19,6 +19,9 @@ export function updateEnemyAggro(units: UnitState[]): void {
     let nearestDistance = Infinity;
     for (const other of units) {
       if (other.faction !== 'player') continue;
+      // Nur Ziele erfassen, die die eigene Waffe treffen kann (WEAPONS.targets) -
+      // ein Feind-Panzer soll nicht ewig einem Flugzeug hinterherfahren.
+      if (!canTarget(unit.unitType, other.unitType)) continue;
       const distance = Math.hypot(other.x - unit.x, other.y - unit.y);
       if (distance <= ENEMY_AGGRO_RANGE && distance < nearestDistance) {
         nearest = other;

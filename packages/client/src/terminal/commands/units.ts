@@ -1,4 +1,4 @@
-import { COMBAT_STATS } from '@bum-bum-taktik/shared';
+import { MAX_HP } from '@bum-bum-taktik/shared';
 import { registerCommand } from '../registry.js';
 import { getSelectionApi } from '../gameBridge.js';
 
@@ -22,7 +22,7 @@ registerCommand('units', 'Tabelle aller eigenen Einheiten (Auswahl/HP/Position) 
   const lines: string[] = [];
   for (const unit of own) {
     const marker = selected.has(unit.id) ? '*' : ' ';
-    const hp = `${Math.round(unit.hp)}/${COMBAT_STATS[unit.unitType].maxHp}`;
+    const hp = `${Math.round(unit.hp)}/${MAX_HP[unit.unitType]}`;
     const pos = `${Math.round(unit.x)},${Math.round(unit.y)}`;
     lines.push(`${marker} ${unit.id.padEnd(idWidth + 2)}${unit.unitType.padEnd(typeWidth + 2)}${hp.padEnd(9)}${pos}`);
   }
@@ -33,7 +33,7 @@ registerCommand('units', 'Tabelle aller eigenen Einheiten (Auswahl/HP/Position) 
     const enemyIdWidth = Math.max(...enemies.map((u) => u.id.length));
     const enemyTypeWidth = Math.max(...enemies.map((u) => u.unitType.length));
     for (const unit of enemies) {
-      const hp = `${Math.round(unit.hp)}/${COMBAT_STATS[unit.unitType].maxHp}`;
+      const hp = `${Math.round(unit.hp)}/${MAX_HP[unit.unitType]}`;
       lines.push(`${unit.id.padEnd(enemyIdWidth + 2)}${unit.unitType.padEnd(enemyTypeWidth + 2)}${hp}`);
     }
   }

@@ -1,4 +1,4 @@
-import type { EntityId, EntitySnapshot, PlayerId } from './types.js';
+import type { EntityId, EntitySnapshot, PlayerId, ProjectileKind } from './types.js';
 import type { MapPresetId } from './procgen/presets.js';
 
 // Server -> Client, beim Verbindungsaufbau und erneut nach jedem
@@ -27,6 +27,8 @@ export interface ShotEvent {
   fromY: number;
   toX: number;
   toY: number;
+  /** Waffen-Optik fuer den Tracer im Client (WEAPONS in constants.ts). */
+  projectile: ProjectileKind;
 }
 
 // Aktiver Aufklaerungs-Sweep (docs/KONZEPT.md Abschnitt 6, "recon"): der

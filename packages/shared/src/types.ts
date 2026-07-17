@@ -2,6 +2,11 @@ export type Domain = 'land' | 'water' | 'air';
 
 export type UnitType = 'tank' | 'infantry' | 'boat' | 'plane';
 
+// Optik eines Schusses im Client (Tracer-Farbe/-Dauer) - der Server legt sie
+// ueber das Waffenprofil (constants.ts) fest und schickt sie im ShotEvent mit.
+// 'flak' ist fuer die spaeteren Verteidigungstuerme reserviert.
+export type ProjectileKind = 'shell' | 'bullet' | 'rocket' | 'flak';
+
 // Koop-Modus (docs/KONZEPT.md Abschnitt 0): alle Spieler teilen sich eine
 // Fraktion, die Gegenseite ist die KI-Fraktion.
 export type Faction = 'player' | 'enemy';

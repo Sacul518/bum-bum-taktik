@@ -13,7 +13,7 @@ import {
 } from './render/camera.js';
 import { createScene } from './render/scene.js';
 import { createTerrainMesh, intersectTerrain, sampleElevation } from './render/terrain.js';
-import { createUnitMesh, applySnapshot, setSelected, preloadUnitAtlas } from './render/units.js';
+import { createUnitMesh, applySnapshot, setSelected } from './render/units.js';
 import { createPathLine, updatePathLine } from './render/path.js';
 import { spawnTracer, updateTracers } from './render/tracers.js';
 import { createFogOverlay, type FogOverlay } from './render/fog.js';
@@ -103,13 +103,6 @@ let mapHeight = 0;
 // Das aktuelle Terrain-Mesh wird gemerkt, damit es beim naechsten hello
 // (Kartenwechsel) wieder aus der Szene entfernt werden kann.
 let terrainMesh: THREE.Mesh | null = null;
-
-// Einheiten-Atlas laedt echte Sprite-Bilder (render/loader.ts) und ist daher
-// asynchron - erst awaiten, dann verbinden, damit beim Eintreffen der ersten
-// "state"-Nachricht createUnitMesh() bereits synchron auf das fertige
-// Material zugreifen kann (docs/KONZEPT.md Abschnitt 7: Atlanten vorab
-// laden).
-await preloadUnitAtlas();
 
 // Verbindungsstatus nur bei Wechseln ins Terminal schreiben: der
 // Auto-Reconnect (net/client.ts) versucht es sonst alle paar Sekunden und

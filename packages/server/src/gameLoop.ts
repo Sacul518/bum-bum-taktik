@@ -1,9 +1,12 @@
 import {
-  COMBAT_STATS,
+  MAX_HP,
   TICK_INTERVAL_MS,
   UNIT_DOMAIN,
+  WEAPONS,
+  canTarget,
   findPath,
   isWalkable,
+  weaponDamage,
   type Domain,
   type EntitySnapshot,
   type Faction,
@@ -129,7 +132,7 @@ function createUnit(id: string, unitType: UnitType, faction: Faction, spawnTile:
     x: world.x,
     y: world.y,
     heading: 0,
-    hp: COMBAT_STATS[unitType].maxHp,
+    hp: MAX_HP[unitType],
     cooldownMs: 0,
     stunnedMs: 0,
     attackTargetId: null,
@@ -239,6 +242,9 @@ export function setAttackTarget(unitId: string, targetId: string): void {
   // Angriffsbefehle auf die eigene Fraktion werden ignoriert (Koop-Modus,
   // docs/KONZEPT.md Abschnitt 0).
   if (!attacker || !target || attacker.faction !== 'player' || target.faction === 'player') return;
+  // Ziele ausserhalb der Waffen-Domains ablehnen (Panzer vs. Flugzeug) -
+  // sonst wuerde die Einheit ewig verfolgen, ohne je feuern zu koennen.
+  if (!canTarget(attacker.unitType, target.unitType)) return;
   attacker.attackTargetId = targetId;
   attacker.attackGoal = null;
 }
@@ -278,7 +284,7 @@ function updateAttackChase(unit: UnitState, grids: WalkabilityGrids): void {
     return;
   }
 
-  if (Math.hypot(target.x - unit.x, target.y - unit.y) <= COMBAT_STATS[unit.unitType].range) {
+  if (Math.hypot(target.x - unit.x, target.y - unit.y) <= WEAPONS[unit.unitType].range) {
     unit.path = [];
     unit.attackGoal = null;
     return;
@@ -294,9 +300,10 @@ function updateAttackChase(unit: UnitState, grids: WalkabilityGrids): void {
 
 // Ziel-Wahl beim Feuern: ein expliziter Angriffsbefehl hat Vorrang (und gilt
 // nur, wenn das Ziel schon in Reichweite ist - sonst laeuft die Verfolgung).
-// Ohne Befehl: Auto-Feuer auf den naechsten Feind in Reichweite.
+// Ohne Befehl: Auto-Feuer auf den naechsten Feind in Reichweite, den die
+// eigene Waffe ueberhaupt treffen kann (WEAPONS.targets).
 function selectFireTarget(unit: UnitState): UnitState | null {
-  const range = COMBAT_STATS[unit.unitType].range;
+  const range = WEAPONS[unit.unitType].range;
 
   if (unit.attackTargetId) {
     const target = findUnit(unit.attackTargetId);
@@ -308,6 +315,7 @@ function selectFireTarget(unit: UnitState): UnitState | null {
   let nearestDistance = Infinity;
   for (const other of units) {
     if (other.faction === unit.faction) continue;
+    if (!canTarget(unit.unitType, other.unitType)) continue;
     const distance = Math.hypot(other.x - unit.x, other.y - unit.y);
     if (distance <= range && distance < nearestDistance) {
       nearest = other;
@@ -334,10 +342,18 @@ function resolveShots(): ShotEvent[] {
     const target = selectFireTarget(unit);
     if (!target) continue;
 
-    unit.cooldownMs = COMBAT_STATS[unit.unitType].cooldownMs;
+    unit.cooldownMs = WEAPONS[unit.unitType].cooldownMs;
     unit.heading = Math.atan2(target.y - unit.y, target.x - unit.x);
-    shots.push({ attackerId: unit.id, targetId: target.id, fromX: unit.x, fromY: unit.y, toX: target.x, toY: target.y });
-    pendingDamage.push({ targetId: target.id, damage: COMBAT_STATS[unit.unitType].damage });
+    shots.push({
+      attackerId: unit.id,
+      targetId: target.id,
+      fromX: unit.x,
+      fromY: unit.y,
+      toX: target.x,
+      toY: target.y,
+      projectile: WEAPONS[unit.unitType].projectile,
+    });
+    pendingDamage.push({ targetId: target.id, damage: weaponDamage(unit.unitType, target.unitType) });
   }
 
   for (const { targetId, damage } of pendingDamage) {
