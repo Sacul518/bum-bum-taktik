@@ -9,8 +9,10 @@ import {
   generatePresetMap,
   getMission,
   isMapPresetId,
+  isMissionUnlocked,
   type ClientCommand,
   type MapPresetId,
+  type MissionObjective,
   type MissionUnitSetup,
   type ServerHello,
   type StateUpdate,
@@ -18,7 +20,7 @@ import {
   type WalkabilityGrids,
 } from '@bum-bum-taktik/shared';
 import { advanceUnits, getUnits, initUnits, orderDisembark, orderEmbark, setAttackTarget, setUnitTargets, spawnProducedUnit } from './gameLoop.js';
-import { buildingSnapshots, initBuildings, updateBuildings } from './buildings.js';
+import { buildingSnapshots, getBuildings, initBuildings, updateBuildings } from './buildings.js';
 import { filterVisibleEntities } from './visibility.js';
 import { abortHack, attemptHack, clearAllHacks, expireTimedOutHacks, startHack } from './hacking.js';
 import { activeReconZones, clearReconZones, requestRecon } from './recon.js';
@@ -50,6 +52,17 @@ let activeMissionId: string | null = null;
 // erneut gesendet.
 let missionEnded = false;
 
+// Gewonnene Missionen der Kampagnen-Kette (shared/missions.ts) - nur im
+// Server-Speicher, Persistenz kommt in Session C.
+const wonMissionIds = new Set<string>();
+
+// Startwerte der aktuellen Karte fuer Zielpruefung und Fortschritt: die
+// Gesamtzahl der Feindeinheiten (eliminateAll zaehlt Zerstoerte dagegen) und
+// ob HQs ueberhaupt platziert wurden - auf Karten mit wenig Land kann eine
+// Platzierung scheitern (initBuildings), dann darf ein fehlendes HQ weder
+// Sofort-Sieg noch Sofort-Niederlage ausloesen.
+let missionStats = { initialEnemyUnits: 0, hadPlayerHq: false, hadEnemyHq: false };
+
 function switchMap(presetId: MapPresetId, setup?: MissionUnitSetup[]): void {
   const preset = MAP_PRESETS[presetId];
   currentPresetId = presetId;
@@ -61,7 +74,33 @@ function switchMap(presetId: MapPresetId, setup?: MissionUnitSetup[]): void {
   missionEnded = false;
   initUnits(walkability, setup);
   initBuildings(walkability);
+  missionStats = {
+    initialEnemyUnits: getUnits().filter((unit) => unit.faction === 'enemy').length,
+    hadPlayerHq: getBuildings().some((building) => building.id === 'hq-player'),
+    hadEnemyHq: getBuildings().some((building) => building.id === 'hq-enemy'),
+  };
   console.log(`Karte generiert: Preset "${preset.name}" (${map.width}x${map.height}, Seed ${preset.gen.seed ?? 1})`);
+}
+
+// Fortschritt zum Missionsziel (protocol.ts objectiveProgress): done/total
+// je nach Zieltyp - Sieg, sobald done >= total (Pruefung im Tick unten).
+function objectiveProgress(objective: MissionObjective): { done: number; total: number } {
+  switch (objective.kind) {
+    case 'eliminateAll': {
+      const alive = getUnits().filter((unit) => unit.faction === 'enemy').length;
+      return { done: missionStats.initialEnemyUnits - alive, total: missionStats.initialEnemyUnits };
+    }
+    case 'destroyHQ': {
+      // Fehlte das Feind-HQ von Anfang an (Platzierung gescheitert), gilt
+      // das Ziel als erreicht - es gibt nichts zu zerstoeren.
+      const standing = missionStats.hadEnemyHq && getBuildings().some((building) => building.id === 'hq-enemy');
+      return { done: standing ? 0 : 1, total: 1 };
+    }
+    case 'captureCities': {
+      const owned = getBuildings().filter((building) => building.buildingType === 'city' && building.faction === 'player').length;
+      return { done: Math.min(owned, objective.count), total: objective.count };
+    }
+  }
 }
 
 switchMap(presetEnv);
@@ -82,6 +121,7 @@ function buildHello(playerId: string): ServerHello {
     playerId,
     preset: currentPresetId,
     missionId: activeMissionId,
+    wonMissionIds: [...wonMissionIds],
     mapWidth: map.width,
     mapHeight: map.height,
     terrain: map.terrain.buffer as ArrayBuffer,
@@ -135,6 +175,13 @@ wss.on('connection', (socket) => {
         const mission = getMission(command.missionId);
         if (!mission) {
           console.error(`startMission mit unbekannter missionId "${command.missionId}" ignoriert`);
+          return;
+        }
+        // Ketten-Sperre serverseitig erzwingen - der Client zeigt gesperrte
+        // Missionen zwar schon als [gesperrt] an, aber der Befehl kommt als
+        // JSON von aussen.
+        if (!isMissionUnlocked(mission.id, [...wonMissionIds])) {
+          console.error(`startMission "${mission.id}" ignoriert - noch gesperrt (Vorgaengerin nicht gewonnen)`);
           return;
         }
         activeMissionId = mission.id;
@@ -204,22 +251,41 @@ setInterval(() => {
   const { entities, shots: unitShots } = advanceUnits();
   const shots = [...unitShots, ...towerShots];
 
-  // Siegpruefung (docs/KONZEPT.md Abschnitt 3.2): nur bei aktiver Mission und
-  // nur bis zum ersten Ergebnis. Beide Seiten weg (theoretisch moeglich, wenn
-  // die letzten Einheiten sich im selben Tick gegenseitig zerstoeren) zaehlt
-  // als Sieg - die Mission war, die Feinde loszuwerden.
-  if (activeMissionId && !missionEnded) {
+  // Zielpruefung (PLAN.md Session A, Aufgabe 4): nur bei aktiver Mission und
+  // nur bis zum ersten Ergebnis. Sieg, sobald das Missionsziel erreicht ist;
+  // Niederlage, wenn alle eigenen Einheiten fallen oder das eigene HQ faellt.
+  // Ziel erreicht schlaegt Niederlage im selben Tick (zerstoeren sich die
+  // letzten Einheiten gegenseitig, zaehlt ein erfuelltes Ziel als Sieg).
+  const activeMission = activeMissionId ? getMission(activeMissionId) : undefined;
+  const progress = activeMission ? objectiveProgress(activeMission.objective) : undefined;
+  if (activeMission && progress && !missionEnded) {
     // Ueber getUnits() statt entities pruefen: eingestiegene Einheiten fehlen
     // in den Snapshots, leben aber - ein Team, dessen letzte Infanterie im
     // Boot sitzt, hat nicht verloren.
     const playersAlive = getUnits().some((unit) => unit.faction === 'player');
-    const enemiesAlive = getUnits().some((unit) => unit.faction === 'enemy');
-    if (!playersAlive || !enemiesAlive) {
+    const playerHqFallen = missionStats.hadPlayerHq && !getBuildings().some((building) => building.id === 'hq-player');
+
+    let outcome: 'won' | 'lost' | null = null;
+    let reason: 'unitsLost' | 'hqLost' | undefined;
+    if (progress.done >= progress.total) {
+      outcome = 'won';
+    } else if (playerHqFallen) {
+      outcome = 'lost';
+      reason = 'hqLost';
+    } else if (!playersAlive) {
+      outcome = 'lost';
+      reason = 'unitsLost';
+    }
+
+    if (outcome) {
       missionEnded = true;
+      if (outcome === 'won') wonMissionIds.add(activeMission.id);
       const payload = encodeServerMessage({
         type: 'missionEnd',
-        missionId: activeMissionId,
-        outcome: enemiesAlive ? 'lost' : 'won',
+        missionId: activeMission.id,
+        outcome,
+        ...(reason ? { reason } : {}),
+        wonMissionIds: [...wonMissionIds],
       });
       for (const client of wss.clients) {
         if (client.readyState === client.OPEN) client.send(payload);
@@ -238,6 +304,7 @@ setInterval(() => {
     visibleEnemyIds,
     buildings,
     ...(reconZones.length > 0 ? { reconZones } : {}),
+    ...(progress ? { objectiveProgress: progress } : {}),
   };
   const payload = encodeServerMessage(state);
   for (const client of wss.clients) {

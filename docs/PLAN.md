@@ -42,7 +42,7 @@ Reihenfolge einhalten, jede Aufgabe einzeln verifizieren + committen:
   Server-Werte (`CAPTURE_RANGE` etc.) nicht anfassen. *Erledigt 2026-07-17:
   Skalierungsfaktor pro Typ (`MODEL_SCALE`) auf der Modellgruppe, Türme mit
   extra Höhen-Stretch; HP-/Capture-Balken wachsen mit. Einheiten unverändert.*
-- [ ] **4. Gameplay-Loop v1 — Missionsziele:** `shared/src/missions.ts` um
+- [x] **4. Gameplay-Loop v1 — Missionsziele:** `shared/src/missions.ts` um
   `objective` (`destroyHQ` | `captureCities(n)` | `eliminateAll`) und einen
   Briefing-Text erweitern; der Server (`server/src/index.ts` / `gameLoop.ts`)
   prüft Sieg/Niederlage anhand des Ziels, Niederlage auch wenn das eigene HQ
@@ -51,7 +51,10 @@ Reihenfolge einhalten, jede Aufgabe einzeln verifizieren + committen:
   Missionen pro Region als Kette mit ansteigender Schwierigkeit; die
   Folge-Mission wird erst nach einem Sieg freigeschaltet (vorerst nur im
   Server-Speicher, Persistenz kommt in Session C; `missions` zeigt gesperrte
-  Missionen als `[gesperrt]`).
+  Missionen als `[gesperrt]`). *Erledigt 2026-07-17: 9 Missionen (Plains 3,
+  andere Regionen je 2), Freischalt-Logik in shared (`isMissionUnlocked`),
+  Fortschritt kommt als `objectiveProgress` im StateUpdate, `missionEnd`
+  nennt Niederlage-Grund (Einheiten/HQ) und schaltet die Folge-Mission frei.*
 - [ ] **5. Terminal-Event-Log + `status`:** Der Server schickt Spiel-Ereignisse
   im `StateUpdate` (`shared/src/protocol.ts`): Einheit unter Beschuss,
   Einheit/Gebäude verloren, Einnahme abgeschlossen (eigene und feindliche),

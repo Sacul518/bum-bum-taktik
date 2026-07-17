@@ -8,6 +8,7 @@ import './exit.js';
 import './hack.js';
 import './map.js';
 import './missions.js';
+import './objective.js';
 import './recon.js';
 import './select.js';
 import './transport.js';

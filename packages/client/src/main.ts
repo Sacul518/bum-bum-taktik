@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DEFAULT_SERVER_PORT, MAP_PRESETS, TICK_INTERVAL_MS, TRANSPORT_CAPACITY, getMission } from '@bum-bum-taktik/shared';
+import { DEFAULT_SERVER_PORT, MAP_PRESETS, TICK_INTERVAL_MS, TRANSPORT_CAPACITY, describeObjective, getMission, missionsForRegion } from '@bum-bum-taktik/shared';
 import type { BuildingFaction, BuildingSnapshot, EntitySnapshot, Faction } from '@bum-bum-taktik/shared';
 import {
   createCameraRig,
@@ -31,6 +31,9 @@ import {
   deliverReconResult,
   getCurrentPreset,
   setCurrentPreset,
+  setActiveMission,
+  setObjectiveProgress,
+  setWonMissions,
 } from './terminal/gameBridge.js';
 import { formatMissionList } from './terminal/commands/missions.js';
 import './terminal/commands/index.js';
@@ -138,6 +141,9 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       // neue Region + ihre Missionen anzeigen (Abschnitt 3.1/3.2).
       const previousPreset = getCurrentPreset();
       setCurrentPreset(message.preset);
+      setWonMissions(message.wonMissionIds);
+      setActiveMission(message.missionId);
+      setObjectiveProgress(null);
       const mission = message.missionId ? getMission(message.missionId) : undefined;
       if (previousPreset === null) {
         terminal.print(`Verbunden - aktuelle Region: ${MAP_PRESETS[message.preset].name}`);
@@ -147,7 +153,8 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       } else if (mission) {
         terminal.print('');
         terminal.print(`Mission gestartet: ${mission.name} (Region ${MAP_PRESETS[message.preset].name})`);
-        terminal.print(mission.description);
+        terminal.print(mission.briefing);
+        terminal.print(`Ziel: ${describeObjective(mission.objective)} - "objective" zeigt den Fortschritt.`);
       } else {
         terminal.print('');
         terminal.print(`Region gewechselt: ${MAP_PRESETS[message.preset].name}`);
@@ -196,6 +203,7 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       // Fog + Minimap nur pro Server-Tick (12 Hz) aktualisieren, nicht pro
       // Frame - beide arbeiten direkt auf den Snapshot-Positionen.
       latestBuildings = message.buildings;
+      setObjectiveProgress(message.objectiveProgress ?? null);
       fogOverlay?.update(message.entities, message.reconZones ?? [], message.buildings);
       minimap.update(message.entities, message.buildings);
 
@@ -264,14 +272,26 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
     // Mission. Terminal oeffnen, damit die Meldung nicht untergeht, wenn es
     // gerade geschlossen ist.
     if (message.type === 'missionEnd') {
+      setWonMissions(message.wonMissionIds);
       const mission = getMission(message.missionId);
       const name = mission?.name ?? message.missionId;
       terminal.print('');
-      terminal.print(
-        message.outcome === 'won'
-          ? `MISSION ERFUELLT: ${name} - alle Feinde zerstoert.`
-          : `MISSION GESCHEITERT: ${name} - alle eigenen Einheiten verloren.`,
-      );
+      if (message.outcome === 'won') {
+        terminal.print(`MISSION ERFUELLT: ${name} - Ziel erreicht.`);
+        // Freischaltung der Kette: die naechste Mission der Region nennen,
+        // damit klar ist, wie es weitergeht.
+        if (mission) {
+          const chain = missionsForRegion(mission.region);
+          const next = chain[chain.findIndex((entry) => entry.id === mission.id) + 1];
+          if (next) terminal.print(`Freigeschaltet: '${next.name}' - starte sie mit "mission start ${next.id}".`);
+        }
+      } else {
+        terminal.print(
+          message.reason === 'hqLost'
+            ? `MISSION GESCHEITERT: ${name} - das eigene Hauptquartier ist gefallen.`
+            : `MISSION GESCHEITERT: ${name} - alle eigenen Einheiten verloren.`,
+        );
+      }
       terminal.print('Weiter geht es mit "mission start <id>" oder "map select <id>".');
       terminal.open();
     }

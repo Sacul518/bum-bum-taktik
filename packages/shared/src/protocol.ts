@@ -10,6 +10,12 @@ export interface ServerHello {
   preset: MapPresetId;
   /** Aktive Mission (docs/KONZEPT.md Abschnitt 3.2) oder null = freie Aufstellung. */
   missionId: string | null;
+  /**
+   * Bisher gewonnene Missionen (Missions-Kette, shared/missions.ts) - der
+   * Client zeigt damit gesperrte Missionen an. Lebt nur im Server-Speicher,
+   * Persistenz kommt in Session C.
+   */
+  wonMissionIds: string[];
   mapWidth: number;
   mapHeight: number;
   terrain: ArrayBuffer; // Terrain-Typ-Index pro Kachel (Uint8Array-Bytes)
@@ -56,6 +62,13 @@ export interface StateUpdate {
   buildings: BuildingSnapshot[];
   /** Nur gesetzt, solange mindestens ein Aufklaerungs-Sweep aktiv ist. */
   reconZones?: ReconZone[];
+  /**
+   * Missionsziel-Fortschritt, nur bei aktiver Mission (server/index.ts).
+   * Bedeutung haengt vom Zieltyp ab (eliminateAll: zerstoerte von allen
+   * Feindeinheiten; destroyHQ: 0/1; captureCities: eigene von geforderten
+   * Staedten) - der Client kennt den Zieltyp aus der MissionDef.
+   */
+  objectiveProgress?: { done: number; total: number };
 }
 
 // --- Hacking-Minispiel (docs/KONZEPT.md Abschnitt 9, Phase 3) ---
@@ -93,13 +106,18 @@ export interface HackResultMessage {
 }
 
 // Missionsende (docs/KONZEPT.md Abschnitt 3.2): der Server broadcastet das
-// Ergebnis genau einmal, sobald alle Feinde ("won") bzw. alle eigenen
-// Einheiten ("lost") zerstoert sind. Die Welt laeuft danach weiter (kein
-// Zwangs-Reset) - ein neuer "mission start"/"map select" raeumt auf.
+// Ergebnis genau einmal, sobald das Missionsziel erreicht ("won") bzw. die
+// Niederlagebedingung erfuellt ist ("lost": alle eigenen Einheiten weg oder
+// eigenes HQ gefallen). Die Welt laeuft danach weiter (kein Zwangs-Reset) -
+// ein neuer "mission start"/"map select" raeumt auf.
 export interface MissionEndMessage {
   type: 'missionEnd';
   missionId: string;
   outcome: 'won' | 'lost';
+  /** Nur bei outcome 'lost': woran es lag. */
+  reason?: 'unitsLost' | 'hqLost';
+  /** Stand nach diesem Ergebnis - haelt die Freischaltungen im Client aktuell. */
+  wonMissionIds: string[];
 }
 
 export type ServerMessage =

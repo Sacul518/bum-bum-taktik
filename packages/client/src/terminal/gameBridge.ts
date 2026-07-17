@@ -31,6 +31,41 @@ export function getCurrentPreset(): MapPresetId | null {
   return currentPreset;
 }
 
+// Kampagnen-Zustand (PLAN.md Session A, Aufgabe 4): gewonnene Missionen
+// (Freischalt-Kette), aktive Mission und Ziel-Fortschritt kommen vom Server
+// (hello/missionEnd bzw. StateUpdate) - main.ts liefert zu, die Terminal-
+// Befehle (missions/objective) lesen hier.
+
+let wonMissionIds: string[] = [];
+
+export function setWonMissions(ids: string[]): void {
+  wonMissionIds = ids;
+}
+
+export function getWonMissions(): string[] {
+  return wonMissionIds;
+}
+
+let activeMissionId: string | null = null;
+
+export function setActiveMission(missionId: string | null): void {
+  activeMissionId = missionId;
+}
+
+export function getActiveMission(): string | null {
+  return activeMissionId;
+}
+
+let objectiveProgress: { done: number; total: number } | null = null;
+
+export function setObjectiveProgress(progress: { done: number; total: number } | null): void {
+  objectiveProgress = progress;
+}
+
+export function getObjectiveProgress(): { done: number; total: number } | null {
+  return objectiveProgress;
+}
+
 /** false, wenn noch keine Verbindung hinterlegt ist - Befehle melden das als Fehler. */
 export function sendGameCommand(command: ClientCommand): boolean {
   if (!sendFn) return false;

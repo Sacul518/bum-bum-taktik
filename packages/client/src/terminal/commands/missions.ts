@@ -1,6 +1,6 @@
-import { MAP_PRESETS, getMission, missionsForRegion, type MapPresetId } from '@bum-bum-taktik/shared';
+import { MAP_PRESETS, getMission, isMissionUnlocked, missionsForRegion, previousMissionInRegion, type MapPresetId } from '@bum-bum-taktik/shared';
 import { registerCommand } from '../registry.js';
-import { getCurrentPreset, sendGameCommand } from '../gameBridge.js';
+import { getCurrentPreset, getWonMissions, sendGameCommand } from '../gameBridge.js';
 
 // Missionsbefehle (docs/KONZEPT.md Abschnitt 3.2): "mission list" zeigt die
 // Missionen der aktuellen Region, "mission start <id>" fordert den Start beim
@@ -15,9 +15,13 @@ export function formatMissionList(preset: MapPresetId): string {
   if (missions.length === 0) return `Keine Missionen fuer Region "${MAP_PRESETS[preset].name}" definiert.`;
 
   const width = Math.max(...missions.map((m) => m.id.length));
+  const won = getWonMissions();
   const lines = [`Missionen der Region ${MAP_PRESETS[preset].name}:`];
   for (const mission of missions) {
-    lines.push(`${mission.id.padEnd(width + 2)}${mission.name} - ${mission.description}`);
+    // Missions-Kette (shared/missions.ts): gesperrt, bis die Vorgaengerin
+    // gewonnen ist; gewonnene zur Orientierung markieren.
+    const tag = won.includes(mission.id) ? ' [gewonnen]' : isMissionUnlocked(mission.id, won) ? '' : ' [gesperrt]';
+    lines.push(`${mission.id.padEnd(width + 2)}${mission.name}${tag} - ${mission.description}`);
   }
   lines.push('');
   lines.push('"mission start <id>" startet eine Mission.');
@@ -43,6 +47,15 @@ function startMission(rawId: string | undefined): string {
       ? missionsForRegion(preset).map((m) => m.id).join(', ') || '(keine fuer diese Region)'
       : '(noch keine Region gewaehlt - "map list" zeigt alle Regionen)';
     return `Unbekannte Mission "${id}" - gueltige IDs der aktuellen Region: ${validIds}`;
+  }
+
+  // Gesperrte Missionen gar nicht erst anfordern (der Server wuerde den
+  // Befehl ohnehin ignorieren) - stattdessen sagen, was fehlt.
+  if (!isMissionUnlocked(mission.id, getWonMissions())) {
+    const previous = previousMissionInRegion(mission.id);
+    return previous
+      ? `Mission '${mission.name}' ist noch gesperrt - gewinne zuerst '${previous.name}' (mission start ${previous.id}).`
+      : `Mission '${mission.name}' ist noch gesperrt.`;
   }
 
   if (!sendGameCommand({ type: 'startMission', missionId: mission.id })) return 'Keine Verbindung zum Server.';
