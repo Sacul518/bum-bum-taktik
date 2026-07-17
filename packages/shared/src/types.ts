@@ -62,4 +62,9 @@ export interface EntitySnapshot {
    * tauchen nicht in den Snapshots auf, solange sie eingestiegen sind.
    */
   passengers?: number;
+  /**
+   * Einheit kaempft gerade (Angriffsbefehl aktiv oder kuerzlich gefeuert) -
+   * fuer die Zustandsspalte des status-Terminalbefehls.
+   */
+  fighting?: boolean;
 }

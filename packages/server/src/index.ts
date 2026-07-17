@@ -10,10 +10,14 @@ import {
   getMission,
   isMapPresetId,
   isMissionUnlocked,
+  type BuildingFaction,
+  type BuildingType,
   type ClientCommand,
+  type GameEvent,
   type MapPresetId,
   type MissionObjective,
   type MissionUnitSetup,
+  type UnitType,
   type ServerHello,
   type StateUpdate,
   type TerrainMap,
@@ -56,12 +60,32 @@ let missionEnded = false;
 // Server-Speicher, Persistenz kommt in Session C.
 const wonMissionIds = new Set<string>();
 
-// Startwerte der aktuellen Karte fuer Zielpruefung und Fortschritt: die
-// Gesamtzahl der Feindeinheiten (eliminateAll zaehlt Zerstoerte dagegen) und
-// ob HQs ueberhaupt platziert wurden - auf Karten mit wenig Land kann eine
-// Platzierung scheitern (initBuildings), dann darf ein fehlendes HQ weder
-// Sofort-Sieg noch Sofort-Niederlage ausloesen.
-let missionStats = { initialEnemyUnits: 0, hadPlayerHq: false, hadEnemyHq: false };
+// Startwerte der aktuellen Karte fuer die Zielpruefung: ob HQs ueberhaupt
+// platziert wurden - auf Karten mit wenig Land kann eine Platzierung
+// scheitern (initBuildings), dann darf ein fehlendes HQ weder Sofort-Sieg
+// noch Sofort-Niederlage ausloesen.
+let missionStats = { hadPlayerHq: false, hadEnemyHq: false };
+
+// Kumulierte Feind-Abschuesse fuer eliminateAll: "initial minus lebend"
+// wuerde negativ, sobald die Feind-Fabrik nachproduziert (im Headless-Test
+// 2026-07-18 genau so passiert). done = Abschuesse, total = Abschuesse +
+// noch lebende Feinde: done erreicht total genau dann, wenn kein Feind mehr
+// uebrig ist, und sinkt nie.
+let enemyUnitsKilled = 0;
+
+// Ereignis-Erkennung fuers Terminal-Event-Log (PLAN.md Session A, Aufgabe 5):
+// Vergleich mit dem vorigen Tick. Nach einem Kartenwechsel ist die Baseline
+// null und der erste Tick meldet nichts - sonst waere jede Start-Einheit ein
+// "produced"-Ereignis.
+const UNDER_FIRE_THROTTLE_MS = 5000;
+let eventBaseline: {
+  playerUnits: Map<string, UnitType>;
+  enemyUnitIds: Set<string>;
+  buildings: Map<string, { buildingType: BuildingType; faction: BuildingFaction }>;
+  objectiveDone: number | null;
+} | null = null;
+// Letzter "unter Beschuss"-Zeitpunkt pro Einheit (Drosselung).
+const underFireAt = new Map<string, number>();
 
 function switchMap(presetId: MapPresetId, setup?: MissionUnitSetup[]): void {
   const preset = MAP_PRESETS[presetId];
@@ -72,13 +96,15 @@ function switchMap(presetId: MapPresetId, setup?: MissionUnitSetup[]): void {
   clearAllHacks();
   clearReconZones();
   missionEnded = false;
+  eventBaseline = null;
+  underFireAt.clear();
   initUnits(walkability, setup);
   initBuildings(walkability);
   missionStats = {
-    initialEnemyUnits: getUnits().filter((unit) => unit.faction === 'enemy').length,
     hadPlayerHq: getBuildings().some((building) => building.id === 'hq-player'),
     hadEnemyHq: getBuildings().some((building) => building.id === 'hq-enemy'),
   };
+  enemyUnitsKilled = 0;
   console.log(`Karte generiert: Preset "${preset.name}" (${map.width}x${map.height}, Seed ${preset.gen.seed ?? 1})`);
 }
 
@@ -88,7 +114,7 @@ function objectiveProgress(objective: MissionObjective): { done: number; total: 
   switch (objective.kind) {
     case 'eliminateAll': {
       const alive = getUnits().filter((unit) => unit.faction === 'enemy').length;
-      return { done: missionStats.initialEnemyUnits - alive, total: missionStats.initialEnemyUnits };
+      return { done: enemyUnitsKilled, total: enemyUnitsKilled + alive };
     }
     case 'destroyHQ': {
       // Fehlte das Feind-HQ von Anfang an (Platzierung gescheitert), gilt
@@ -256,6 +282,20 @@ setInterval(() => {
   // Niederlage, wenn alle eigenen Einheiten fallen oder das eigene HQ faellt.
   // Ziel erreicht schlaegt Niederlage im selben Tick (zerstoeren sich die
   // letzten Einheiten gegenseitig, zaehlt ein erfuelltes Ziel als Sieg).
+  // Feind-Abschuesse VOR der Fortschrittsberechnung zaehlen (eliminateAll
+  // basiert darauf) - Vergleichsbasis ist der Einheitenstand des vorigen
+  // Ticks aus der Event-Baseline.
+  const currentEnemyIds = new Set(
+    getUnits()
+      .filter((unit) => unit.faction === 'enemy')
+      .map((unit) => unit.id),
+  );
+  if (eventBaseline) {
+    for (const id of eventBaseline.enemyUnitIds) {
+      if (!currentEnemyIds.has(id)) enemyUnitsKilled += 1;
+    }
+  }
+
   const activeMission = activeMissionId ? getMission(activeMissionId) : undefined;
   const progress = activeMission ? objectiveProgress(activeMission.objective) : undefined;
   if (activeMission && progress && !missionEnded) {
@@ -293,6 +333,59 @@ setInterval(() => {
     }
   }
 
+  // Ereignisse per Diff zum vorigen Tick sammeln (Baseline null nach
+  // Kartenwechsel = erster Tick meldet nichts, baut nur die Baseline auf).
+  const events: GameEvent[] = [];
+  const currentPlayerUnits = new Map<string, UnitType>(
+    getUnits()
+      .filter((unit) => unit.faction === 'player')
+      .map((unit) => [unit.id, unit.unitType]),
+  );
+  const currentBuildings = new Map(
+    getBuildings().map((building) => [building.id, { buildingType: building.buildingType, faction: building.faction }]),
+  );
+  if (eventBaseline) {
+    for (const [id, unitType] of eventBaseline.playerUnits) {
+      if (!currentPlayerUnits.has(id)) events.push({ kind: 'unitLost', unitId: id, unitType });
+    }
+    // Neue eigene Einheit = Fabrik-Produktion (nur Fabriken erzeugen im
+    // laufenden Spiel Einheiten). Feind-Produktion wird bewusst nicht
+    // gemeldet - die faende im Fog of War statt.
+    for (const [id, unitType] of currentPlayerUnits) {
+      if (!eventBaseline.playerUnits.has(id)) events.push({ kind: 'produced', unitId: id, unitType });
+    }
+    for (const [id, previous] of eventBaseline.buildings) {
+      const current = currentBuildings.get(id);
+      if (!current) {
+        // Zerstoerung nur fuer eigene Gebaeude melden; ein Fraktionswechsel
+        // ist dagegen eine Einnahme (beide Richtungen melden).
+        if (previous.faction === 'player') events.push({ kind: 'buildingLost', buildingId: id, buildingType: previous.buildingType });
+      } else if (current.faction !== previous.faction && current.faction !== 'neutral') {
+        events.push({ kind: 'captured', buildingId: id, buildingType: current.buildingType, byFaction: current.faction });
+      }
+    }
+    // Unter Beschuss: Treffer auf noch lebende eigene Einheiten, pro Einheit
+    // gedrosselt. Frisch Gefallene erzeugen schon das unitLost-Ereignis.
+    const now = Date.now();
+    for (const shot of shots) {
+      const unitType = currentPlayerUnits.get(shot.targetId);
+      if (!unitType) continue;
+      const last = underFireAt.get(shot.targetId);
+      if (last !== undefined && now - last < UNDER_FIRE_THROTTLE_MS) continue;
+      underFireAt.set(shot.targetId, now);
+      events.push({ kind: 'underFire', unitId: shot.targetId, unitType });
+    }
+    if (progress && eventBaseline.objectiveDone !== null && progress.done !== eventBaseline.objectiveDone) {
+      events.push({ kind: 'objective', done: progress.done, total: progress.total });
+    }
+  }
+  eventBaseline = {
+    playerUnits: currentPlayerUnits,
+    enemyUnitIds: currentEnemyIds,
+    buildings: currentBuildings,
+    objectiveDone: progress ? progress.done : null,
+  };
+
   const reconZones = activeReconZones();
   const buildings = buildingSnapshots();
   const { entities: visibleEntities, visibleEnemyIds } = filterVisibleEntities(entities, shots, reconZones, buildings);
@@ -305,6 +398,7 @@ setInterval(() => {
     buildings,
     ...(reconZones.length > 0 ? { reconZones } : {}),
     ...(progress ? { objectiveProgress: progress } : {}),
+    ...(events.length > 0 ? { events } : {}),
   };
   const payload = encodeServerMessage(state);
   for (const client of wss.clients) {

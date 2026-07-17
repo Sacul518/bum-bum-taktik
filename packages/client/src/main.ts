@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { DEFAULT_SERVER_PORT, MAP_PRESETS, TICK_INTERVAL_MS, TRANSPORT_CAPACITY, describeObjective, getMission, missionsForRegion } from '@bum-bum-taktik/shared';
-import type { BuildingFaction, BuildingSnapshot, EntitySnapshot, Faction } from '@bum-bum-taktik/shared';
+import { BUILDINGS, DEFAULT_SERVER_PORT, MAP_PRESETS, TICK_INTERVAL_MS, TRANSPORT_CAPACITY, describeObjective, getMission, missionsForRegion } from '@bum-bum-taktik/shared';
+import type { BuildingFaction, BuildingSnapshot, EntitySnapshot, Faction, GameEvent } from '@bum-bum-taktik/shared';
 import {
   createCameraRig,
   updateCameraAspect,
@@ -70,6 +70,37 @@ terminal.open();
 
 const pathLine = createPathLine();
 scene.add(pathLine);
+
+// Terminal-Event-Log (PLAN.md Session A, Aufgabe 5): Server-Ereignisse als
+// Terminalzeilen. Kein eigenes Puffern noetig - das Scrollback-DOM des
+// Terminals existiert auch bei geschlossenem Fenster, die Zeilen stehen beim
+// naechsten Oeffnen da. Gedrosselt wird serverseitig (underFire).
+function printGameEvent(event: GameEvent): void {
+  switch (event.kind) {
+    case 'underFire':
+      terminal.print(`[!] ${event.unitId} (${event.unitType}) unter Beschuss`);
+      break;
+    case 'unitLost':
+      terminal.print(`[X] Einheit verloren: ${event.unitId} (${event.unitType})`);
+      break;
+    case 'buildingLost':
+      terminal.print(`[X] Gebaeude verloren: ${BUILDINGS[event.buildingType].name} (${event.buildingId})`);
+      break;
+    case 'captured':
+      terminal.print(
+        event.byFaction === 'player'
+          ? `[+] Einnahme abgeschlossen: ${BUILDINGS[event.buildingType].name} (${event.buildingId}) gehoert jetzt uns`
+          : `[!] Feind hat ${BUILDINGS[event.buildingType].name} (${event.buildingId}) eingenommen`,
+      );
+      break;
+    case 'produced':
+      terminal.print(`[+] Produktion fertig: ${event.unitId} (${event.unitType})`);
+      break;
+    case 'objective':
+      terminal.print(`[*] Missionsziel-Fortschritt: ${event.done}/${event.total}`);
+      break;
+  }
+}
 
 // Radar-Minimap (KONZEPT Abschnitt 4/Phase 2) lebt ueber Kartenwechsel
 // hinweg; das Fog-of-War-Overlay haengt dagegen an der Kartengroesse und
@@ -204,6 +235,7 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       // Frame - beide arbeiten direkt auf den Snapshot-Positionen.
       latestBuildings = message.buildings;
       setObjectiveProgress(message.objectiveProgress ?? null);
+      for (const event of message.events ?? []) printGameEvent(event);
       fogOverlay?.update(message.entities, message.reconZones ?? [], message.buildings);
       minimap.update(message.entities, message.buildings);
 

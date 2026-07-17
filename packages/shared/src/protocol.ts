@@ -1,4 +1,4 @@
-import type { BuildingSnapshot, EntityId, EntitySnapshot, PlayerId, ProjectileKind } from './types.js';
+import type { BuildingSnapshot, BuildingType, EntityId, EntitySnapshot, Faction, PlayerId, ProjectileKind, UnitType } from './types.js';
 import type { MapPresetId } from './procgen/presets.js';
 
 // Server -> Client, beim Verbindungsaufbau und erneut nach jedem
@@ -47,6 +47,19 @@ export interface ReconZone {
   radius: number;
 }
 
+// Spiel-Ereignisse fuers Terminal-Event-Log (PLAN.md Session A, Aufgabe 5):
+// der Server erkennt sie per Vergleich mit dem vorigen Tick und schickt sie
+// im StateUpdate mit, der Client druckt sie ins Terminal. "underFire" ist
+// serverseitig pro Einheit gedrosselt (UNDER_FIRE_THROTTLE_MS in index.ts),
+// damit Dauerbeschuss nicht jede Sekunde eine Zeile erzeugt.
+export type GameEvent =
+  | { kind: 'underFire'; unitId: EntityId; unitType: UnitType }
+  | { kind: 'unitLost'; unitId: EntityId; unitType: UnitType }
+  | { kind: 'buildingLost'; buildingId: EntityId; buildingType: BuildingType }
+  | { kind: 'captured'; buildingId: EntityId; buildingType: BuildingType; byFaction: Faction }
+  | { kind: 'produced'; unitId: EntityId; unitType: UnitType }
+  | { kind: 'objective'; done: number; total: number };
+
 // Server -> Client, pro Tick
 export interface StateUpdate {
   type: 'state';
@@ -69,6 +82,8 @@ export interface StateUpdate {
    * Staedten) - der Client kennt den Zieltyp aus der MissionDef.
    */
   objectiveProgress?: { done: number; total: number };
+  /** Nur gesetzt, wenn in diesem Tick Ereignisse anfielen (GameEvent oben). */
+  events?: GameEvent[];
 }
 
 // --- Hacking-Minispiel (docs/KONZEPT.md Abschnitt 9, Phase 3) ---

@@ -55,14 +55,20 @@ Reihenfolge einhalten, jede Aufgabe einzeln verifizieren + committen:
   andere Regionen je 2), Freischalt-Logik in shared (`isMissionUnlocked`),
   Fortschritt kommt als `objectiveProgress` im StateUpdate, `missionEnd`
   nennt Niederlage-Grund (Einheiten/HQ) und schaltet die Folge-Mission frei.*
-- [ ] **5. Terminal-Event-Log + `status`:** Der Server schickt Spiel-Ereignisse
+- [x] **5. Terminal-Event-Log + `status`:** Der Server schickt Spiel-Ereignisse
   im `StateUpdate` (`shared/src/protocol.ts`): Einheit unter Beschuss,
   Einheit/Gebäude verloren, Einnahme abgeschlossen (eigene und feindliche),
   Produktion fertig, Missionsziel-Fortschritt. Das Terminal druckt sie
   automatisch (auch bei geschlossenem Fenster puffern), mit Throttling —
   „unter Beschuss" pro Einheit höchstens alle paar Sekunden. Neuer
   `status`-Befehl: Tabelle aller eigenen Einheiten mit HP, Zustand
-  (bewegt/kämpft/idle/eingestiegen) und Position.
+  (bewegt/kämpft/idle/eingestiegen) und Position. *Erledigt 2026-07-18:
+  Erkennung per Tick-Diff auf dem Server, underFire serverseitig 5 s pro
+  Einheit gedrosselt; Puffern übernimmt das bestehende Terminal-Scrollback.
+  Abweichungen: „eingestiegen" erscheint als Passagier-Zahl beim Transport
+  (Eingestiegene stehen bewusst nicht in Snapshots); dabei Bug gefixt:
+  eliminateAll-Fortschritt wurde durch Feind-Nachproduktion negativ, zählt
+  jetzt kumulierte Abschüsse (total = Abschüsse + lebende Feinde).*
 - [ ] **6. Falls noch Zeit — Balancing `erstkontakt`:** bekannt zu schwer
   (Spieler verlor 3 von 4 Testläufen) — `WEAPONS`/`MAX_HP` in
   `shared/src/constants.ts` anpassen und mit Testgefechten prüfen.

@@ -652,6 +652,9 @@ export function advanceUnits(): { entities: EntitySnapshot[]; shots: ShotEvent[]
       // und vertraegt sich mit exactOptionalPropertyTypes).
       ...(unit.stunnedMs > 0 ? { stunned: true } : {}),
       ...(unit.passengerIds.length > 0 ? { passengers: unit.passengerIds.length } : {}),
+      // "kaempft" fuer den status-Befehl: expliziter Angriffsbefehl oder vor
+      // kurzem gefeuert (Cooldown laeuft noch).
+      ...(unit.attackTargetId !== null || unit.cooldownMs > 0 ? { fighting: true } : {}),
     }));
 
   return { entities, shots };
