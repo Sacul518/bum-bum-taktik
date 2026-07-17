@@ -1,18 +1,24 @@
-# Zusammenfassung der autonomen Session (2026-07-11/12)
+# Zusammenfassung der autonomen Session (2026-07-16/17)
 
-Du wolltest: KONZEPT.md abarbeiten, viel Progress, alles dokumentiert zum Nachprüfen.
-Hier steht, **was** getan wurde, **wie** es verifiziert wurde und **wie du es selbst testen kannst**.
+Auftrag: 5 priorisierte Aufgaben abarbeiten — Raycasting-Bugfix, Terminal-Upgrades,
+3D-Modelle & Waffen, Transport, Gebäude & Basen. Alle 5 sind fertig, verifiziert
+und gepusht. Hier steht, **was** getan wurde, **wie** es verifiziert wurde und
+**wie du es selbst testen kannst**.
 
 ## Was ist neu (aus Spieler-Sicht)
 
-1. **Missionen sind jetzt startbar** — im Terminal `mission list` und `mission start <id>` (z. B. `mission start erstkontakt`). Der Server wechselt auf die Region der Mission und spawnt die Startaufstellung (Spieler nahe Kartenmitte, Feinde in einem Ring außen).
-2. **Fog of War** — die Karte ist außerhalb der Sichtkreise deiner Einheiten abgedunkelt. Feinde tauchen erst auf, wenn eine deiner Einheiten sie sieht (Sichtweite pro Typ: Panzer 10, Infanterie 8, Boot 12, Flugzeug 16 Kacheln). Feinde, die schießen, verraten sich durchs Mündungsfeuer.
-3. **Minimap (Radar)** — unten rechts, im Terminal-Retro-Look: Terrain als Hintergrund, grüne Punkte = eigene Einheiten, rote = sichtbare Feinde.
-4. **Gegner-KI** — Feinde greifen jetzt von sich aus an: wer näher als 14 Kacheln an eine Feind-Einheit kommt, wird verfolgt und beschossen. Nur das Flugzeug (Sichtweite 16) sieht Feinde, bevor sie aggro werden — Aufklärung lohnt sich.
-5. **Neue Terminal-Befehle** — `select <id...>` / `select all [land|water|air]` / `select none` / `select list`, `units` (Tabelle eigener Einheiten + sichtbare Feinde), `mission list/start`.
-6. **Echte Sprites für Boot und Flugzeug** — aus dem PixVoxel-CC0-Pack (wie Panzer/Infanterie), keine Platzhalter-Rechtecke mehr.
-7. **Auto-Reconnect** — wenn die Verbindung abreißt (Server-Neustart, iPad-Ruhezustand), verbindet der Client automatisch neu (1–5 s Backoff). Bei WebGL-Kontextverlust lädt die Seite neu.
-8. **Hacking-Minispiel** *(Phase 3)* — `hack <feindId>` im Terminal: der Server schickt einen Zugriffscode (4 Hex-Bytes, z. B. `A3 F0 7C 21`), den du innerhalb von 12 s nachtippen musst. Erfolg = Ziel ist 8 s lahmgelegt (fährt nicht, schießt nicht). Falscher Code oder Timeout = das Ziel ist alarmiert und greift sofort an. Hacken geht nur, wenn eine eigene Einheit nah genug dran ist (12 Kacheln — außerhalb der Waffenreichweite der Feinde, aber innerhalb ihrer Aggro-Reichweite: Risiko!).
+1. **Klicks treffen jetzt das echte Gelände** (Commit `2a7d4fe`) — vorher wurde gegen eine flache y=0-Ebene geraycastet: bei geneigter Kamera und Hügeln/Senken landete der Move-Befehl auf der falschen Kachel. Jetzt echtes 3D-Raycasting gegen das Höhenfeld.
+2. **Terminal wie eine echte Shell** (Commit `128a067`) — Tab-Vervollständigung für Befehle UND Argumente (z. B. `board bo<Tab>` → `boat-1`), Ghost-Vorschlag in Grau hinter der Eingabe, Befehls-History mit Pfeiltasten, „Error Lens": fehlerhafte Token werden rot unterstrichen mit Meldung, „meintest du …?" bei Tippfehlern.
+3. **Echte 3D-Modelle statt Sprites** (Commit `6c2f9cc`) — Panzer (Ketten, Turm, Rohr), Infanterie, Boot (Rumpf mit Bug, Geschütz), Flugzeug (Tragflächen, Kanzel) als prozedurale Low-Poly-Modelle aus Three.js-Primitiven. Olivgrün = du, Rostrot = Feind. Dazu Licht (Hemisphären- + Richtungslicht).
+4. **Waffensystem** (ebenfalls `6c2f9cc`) — jede Einheit hat genau eine Waffe mit Reichweite, Schaden, Feuerpause, erlaubten Ziel-Domains und Bonus-Schaden: Panzerkanone (kann NICHT auf Flugzeuge), Sturmgewehr (einzige Boden-Flugabwehr), Schiffsgeschütz (Reichweite 8), Raketen (trifft alles, Bonus gegen Boote). Tracer-Farben pro Waffe (orange/gelb/rot).
+5. **Transport** (Commit `401ab83`) — Infanterie steigt in Boot (4 Plätze) oder Flugzeug (2) ein: Klick auf den eigenen Transporter (wenn nur Infanterie ausgewählt ist) oder Terminal `board <id>` / `unboard`. Eingestiegene sind unsichtbar und unangreifbar, sterben aber mit dem Transporter. Weiße Punkte über dem HP-Balken zeigen die Belegung.
+6. **Gebäude & Basen** (Commit `81e005c`) — auf jeder Karte: dein HQ + Fabrik nahe der Mitte, Feind-HQ + Fabrik + 2 Wachtürme weit weg, 3 neutrale Städte dazwischen.
+   - **Zerstörbar**: Klick auf feindliches/neutrales Gebäude = Angriffsbefehl.
+   - **Einnehmbar**: Infanterie neben Fabrik/Stadt (3 Kacheln) nimmt sie in 8 s ein (gelber Fortschrittsbalken); das Gebäude wechselt Farbe und Fraktion.
+   - **Sicht**: deine Gebäude stanzen Sichtkreise in den Fog of War.
+   - **Produktion**: Fabriken spawnen alle 30 s eine Infanterie ihrer Fraktion (max. 5 pro Fabrik) — auch die Feind-Fabrik!
+   - **Wachtürme** feuern hellblaue Flak (Reichweite 7) auf alles, was sich nähert — ein Flugzeug allein überlebt den Anflug aufs Feind-HQ nicht.
+   - Terminal-Befehl `buildings` zeigt alle Gebäude mit HP und Einnahme-Status.
 
 ## So testest du es (5 Minuten)
 
@@ -20,65 +26,44 @@ Hier steht, **was** getan wurde, **wie** es verifiziert wurde und **wie du es se
 npm run dev          # in zwei Terminals: --workspace=packages/server und --workspace=packages/client
 ```
 
-1. http://localhost:5173 öffnen → Plains-Karte, Terminal ist offen.
-2. `mission start erstkontakt` → Wüsten-Karte, 4 eigene Einheiten (Panzer, Infanterie, Boot, Flugzeug — Boot/Flugzeug mit neuen Sprites), Karte außerhalb der Sichtkreise dunkel, Minimap unten rechts.
-3. `select all`, Terminal schließen (Escape), auf einen Punkt Richtung Kartenrand klicken → Einheiten laufen los; nach ein paar Sekunden tauchen Feinde auf und greifen an (Tracer, HP sinken).
-4. `units` im Terminal → unter "Sichtbare Feinde:" steht jetzt z. B. `enemy-tank-1`.
-5. `hack enemy-tank-1` → Zugriffscode abtippen (Groß/klein und Leerzeichen egal) → bei Erfolg steht der Feind 8 s still (türkiser Marker über dem HP-Balken).
-6. `mission start brueckenkopf` → Meer-Karte, Kamera startet weiter herausgezoomt (mehrere Inseln sichtbar), Gefecht mit Booten.
+1. http://localhost:5173 öffnen → neben deinen Einheiten stehen HQ (Bunker mit Antenne) und Fabrik (Halle mit Schornstein) in Olivgrün.
+2. `buildings` im Terminal → Tabelle mit 9 Gebäuden und Positionen.
+3. Terminal schließen (Escape), Infanterie anklicken, dann zu einer grauen Häusergruppe (neutrale Stadt) schicken → daneben stehen lassen → gelber Balken füllt sich, nach 8 s wird die Stadt grün (deine!) und ihr Sichtkreis lichtet den Nebel.
+4. Infanterie anklicken, dann aufs Boot klicken → sie läuft hin und steigt ein (weißer Punkt überm Boot). Boot irgendwohin fahren, `unboard` im Terminal → sie steigt wieder aus.
+5. Panzer auswählen, auf eine Stadt/das Feind-HQ klicken → er fährt hin und schießt es kaputt (HP-Balken am Gebäude).
+6. Warte 30 s → neben deiner Fabrik erscheint eine neue Infanterie-Einheit (`infantry-p1`).
+7. Tab-Taste im Terminal ausprobieren: `bo<Tab>` → `board`, dann nochmal Tab → Transporter-IDs.
 
 ## Wie es verifiziert wurde
 
-- `npm run typecheck && npm run lint && npm run build` — alles grün.
-- **Server-Logik headless getestet** (echte WebSocket-Clients gegen den laufenden Server, ohne Browser):
-  - Batch 1: 15/15 Tests bestanden — Missionsstart (alle 4 Missionen + alle 4 Presets crashfrei), Fog-of-War-Filterung (anfangs 0 Feinde im Snapshot), Gegner-Aggro und erster Schuss zum erwarteten Tick.
-  - Hacking: *(Ergebnis siehe unten, Abschnitt "Testläufe")*
-- **Browser-Integrationstest**: *(Ergebnis siehe unten, Abschnitt "Testläufe")*
-
-## Testläufe
-
-**Browser-Integrationstest, Runde 1** (headless Chrome/Puppeteer per Subagent, weil die Claude-Chrome-Erweiterung getrennt war):
-- Bestanden: Laden ohne JS-Fehler, Minimap (inkl. Kartenwechsel), Terminal-Befehle (`help`, `units`, `select`, `mission list`), Missionsstart `erstkontakt` (4 Einheiten, echte Boot-/Flugzeug-Sprites, Flugzeug zeigt nach rechts), Meer-Karte `brueckenkopf` (Inseln + herausgezoomte Kamera).
-- **Gefunden: Fog-of-War-Sichtkreise lagen an der Z-gespiegelten Position der Einheiten** (THREE.DataTexture hat `flipY = false` als Default — anders als normale Bild-Texturen; der Code nahm das Gegenteil an). Fix in `fog.ts`: Stempel-Zeile wird jetzt gespiegelt berechnet (`cy = mapHeight/2 - unit.y`).
-- Nicht beurteilbar in Runde 1: Gegner-Angriff im Sichtfenster des Tests (die Server-Logik dazu war aber schon vorher headless verifiziert: Aggro + erster Schuss zum erwarteten Tick).
-
-**Hacking, serverseitig (headless, echte WebSocket-Clients): 9/9 bestanden** — unbekanntes Ziel → `invalidTarget`; außer Reichweite → `outOfRange`; Challenge-Format (4 Hex-Bytes, 12 s); paralleler Hack → `alreadyHacking`; falscher Code → `wrongCode`; richtiger Code (klein geschrieben, ohne Leerzeichen → Normalisierung) → Erfolg; Ziel hat `stunned=true` im Snapshot; Stun nach ~8 s wieder weg; keine Antwort → `timeout` nach 12 s.
-
-**Browser-Integrationstest, Runde 2** (FoW-Fix + Hacking-Bedienung): *(Ergebnis folgt unten)*
+- `npm run typecheck && npm run build` nach jedem Schritt — grün.
+- **Headless-E2E-Tests** (echte WebSocket-Clients gegen den laufenden Server):
+  - Raycasting: 7/7, Terminal: 23/23, Waffen: 24/24 (Domain-Regeln, Bonus-Schaden, Cooldowns), Transport: 9/9 (inkl. Fern-Anlauf: Infanterie läuft 8+ Kacheln zum Boot), **Gebäude: 13/13** (Platzierung, Capture mit Fortschritt, Turm-Flak, Fabrik-Produktion, Gebäude-Zerstörung), Fog/Recon-Regressionen: grün.
+- **Browser-Tests** (Chrome, per Subagent): Transport (board/unboard, Passagier-Punkte, keine JS-Fehler) und Gebäude (9 Gebäude gerendert, `buildings`-Tabelle, HQ/Fabrik/Städte optisch korrekt, keine JS-Fehler) — alle Schritte PASS.
 
 ## Technische Details (wo was liegt)
 
 | Bereich | Dateien |
 |---|---|
-| Serverseitiger Fog of War | `packages/server/src/visibility.ts` |
-| Gegner-KI (Aggro) | `packages/server/src/ai.ts` |
-| Missions-Spawns (inkl. Meer-Karten-Fix) | `packages/server/src/gameLoop.ts` |
-| Hacking (Server: Challenges, Stun, Alarm) | `packages/server/src/hacking.ts` |
-| FoW-Verdunkelung (DataTexture-Overlay) | `packages/client/src/render/fog.ts` |
-| Minimap | `packages/client/src/ui/minimap.ts` |
-| Auto-Reconnect | `packages/client/src/net/client.ts` |
-| Terminal-Befehle | `packages/client/src/terminal/commands/{missions,select,units,hack}.ts` |
-| Neue Sprites + Loader | `assets/sprites/{water,air}/`, `packages/client/src/render/loader.ts` |
-| Protokoll/Konstanten (Verträge) | `packages/shared/src/{protocol,constants,types}.ts` |
+| Waffenprofile, Transport-, Gebäude-Konstanten | `packages/shared/src/constants.ts` (`WEAPONS`, `TRANSPORT_CAPACITY`, `BUILDINGS`, `TOWER_WEAPON`) |
+| Gebäude-Logik (Platzierung/Capture/Produktion/Turm) | `packages/server/src/buildings.ts` |
+| Transport + Gebäude-Angriffsziele + Fabrik-Spawn | `packages/server/src/gameLoop.ts` |
+| Sichtquellen (Einheiten + Gebäude + Recon) | `packages/server/src/visibility.ts`, `packages/client/src/render/fog.ts` |
+| Prozedurale Modelle | `packages/client/src/render/models.ts` (Einheiten), `render/buildings.ts` (Gebäude) |
+| Terminal-Autocomplete/Error-Lens | `packages/client/src/terminal/registry.ts` + `commands/*.ts` |
+| Neue Terminal-Befehle | `commands/transport.ts` (`board`/`unboard`), `commands/buildings.ts` |
 
-Alle Design-Entscheidungen mit Begründung stehen in `docs/KONZEPT.md` (Kästen "entschieden & umgesetzt" in Abschnitt 9, Phase 2 und Phase 3).
+Alle Design-Entscheidungen mit Begründung: `docs/KONZEPT.md`, Kästen „entschieden & umgesetzt" (zuletzt: „Gebäude & Basen", 2026-07-17).
 
-## Unterwegs gefundene und behobene Bugs
+## Für dich notiert (Balancing/Beobachtungen)
 
-- **Feind-Spawn auf der Meer-Karte**: Die Kartenmitte liegt im Wasser, dadurch landeten Feinde teils nur 4–6 Kacheln neben den Spielern (sofortiges Feuergefecht beim Spawn). Fix: Feind-Spawns verlangen jetzt echten Mindestabstand zu den tatsächlich platzierten Spieler-Einheiten, nicht nur zum Kartenmittelpunkt.
-- **Meer-Karte: Start-Zoom zeigte nur eine Insel**: Presets können jetzt eine Start-Zoomstufe vorgeben (`startViewSize`, Meer: 130).
-- **PixVoxel-Pack-Überraschungen**: Die Marine-Sprites heißen im Pack anders als auf der Webseite (Boat_P/S/T statt Battleship/Cruiser/Submarine), und beim Flugzeug zeigt `face3` nach links statt rechts (bei allen anderen Einheiten rechts) — per Pixel-Analyse festgestellt, `face1` verwendet. Ein getauchter U-Boot-Zustand existiert im Pack nicht.
-
-## Bewusste Design-Entscheidungen (Kurzfassung)
-
-- **FoW ohne "erkundet"-Gedächtnis**: nur sichtbar/unsichtbar — der Server schickt ohnehin nur sichtbare Feinde, und es spart Zustand. Später erweiterbar.
-- **Hacking = Code nachtippen unter Zeitdruck** statt Rätsel: trivial zu generieren/prüfen, Schwierigkeit hängt an zwei Konstanten, Protokoll ist für kompliziertere Challenges offen.
-- **Fehlgeschlagener Hack alarmiert das Ziel** statt Cooldown-Bestrafung: Risiko/Spannung statt Warten.
-- **Koop = geteilte Sicht**: ein gefiltertes Zustandspaket für alle Clients (RPi-CPU-Budget, siehe KONZEPT Abschnitt 2.1).
+- **Mission `erstkontakt` ist hart**: Im Browser-Test verlor der Spieler 3 von 4 Läufen gegen die 2 Feind-Einheiten. Wenn du das auch so empfindest: Stellschrauben sind `WEAPONS`/`MAX_HP` in `shared/src/constants.ts`.
+- Die Feind-Fabrik produziert bis zu 5 zusätzliche Feind-Infanteristen pro Karte — freie Karten werden dadurch lebendiger, Missionen bleiben unberührt (Sieg zählt weiterhin nur Einheiten, nicht Gebäude).
+- Ungeschützte Infanterie beim Einnehmen wird von der Feind-KI angegriffen (im Test passiert) — Eskorte mitschicken lohnt sich.
 
 ## Offene Punkte (bewusst nicht gemacht)
 
-- Missions-Siegbedingungen (aktuell: Mission = Startaufstellung; "gewonnen/verloren" gibt es noch nicht).
-- `recon`-Befehl, Sonar/U-Boote, Wetter, Wasser-Shader, PWA (Phase 3/4).
-- Submarine-Sprite liegt schon in `assets/sprites/water/`, ist aber noch nicht als Einheitentyp eingebunden.
-- Grafik-Feinschliff generell (deine Regel: Konzept vor Politur, Phase 4).
+- Sieg/Niederlage hängt nur an Einheiten — „HQ zerstören" als Missionsziel wäre der nächste logische Schritt.
+- Feind-KI ignoriert Gebäude (greift nicht an, nimmt nicht ein).
+- Gebäude auf der Minimap fehlen noch.
+- Sonar/U-Boote, Wasser-Shader, PWA, Grafik-Feinschliff (Phase 3/4).
