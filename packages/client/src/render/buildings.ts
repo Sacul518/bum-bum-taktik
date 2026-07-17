@@ -70,6 +70,18 @@ const BUILDERS: Record<BuildingType, (faction: BuildingFaction) => THREE.Group> 
   tower: buildTower,
 };
 
+// Sichtbare Groesse pro Typ (PLAN.md Session A, Aufgabe 3): Gebaeude wirkten
+// kaum groesser als Einheiten. Rein visuell - Server-Werte wie CAPTURE_RANGE
+// (3 ab Gebaeudezentrum) bleiben unberuehrt, die Grundflaechen bleiben klein
+// genug, dass einnehmende Infanterie nicht im Modell steht. Tuerme strecken
+// nur in die Hoehe ("spuerbar hoch"), sonst wuerden sie klobig.
+const MODEL_SCALE: Record<BuildingType, { xz: number; y: number }> = {
+  hq: { xz: 1.35, y: 1.35 }, // Grundflaeche ~4x4 Kacheln
+  factory: { xz: 1.4, y: 1.4 }, // ~3.4x2.5 Kacheln
+  city: { xz: 1.4, y: 1.5 }, // Haeuser-Cluster ~2.7x2.7 Kacheln
+  tower: { xz: 1.25, y: 1.7 }, // ~5.8 Einheiten hoch
+};
+
 // Balken wie bei den Einheiten (units.ts): Kamera-zugewandte Sprites auf der
 // Mittelachse. HP-Balken nur sichtbar, wenn das Gebaeude beschaedigt ist;
 // darunter ein gelber Einnahme-Fortschrittsbalken, solange ein Capture laeuft.
@@ -120,9 +132,15 @@ function setBarFraction(bar: THREE.Object3D, fillName: string, fraction: number)
 
 export function createBuildingMesh(buildingType: BuildingType, faction: BuildingFaction): THREE.Group {
   const group = new THREE.Group();
-  group.add(BUILDERS[buildingType](faction));
-  group.add(createBar(hpFillMaterial, 'hpFill', 'hpBar', BAR_Y[buildingType]));
-  group.add(createBar(captureFillMaterial, 'captureFill', 'captureBar', BAR_Y[buildingType] - BAR_HEIGHT * 1.6));
+  const model = BUILDERS[buildingType](faction);
+  const scale = MODEL_SCALE[buildingType];
+  model.scale.set(scale.xz, scale.y, scale.xz);
+  group.add(model);
+  // Balken sitzen ueber der Oberkante des skalierten Modells - BAR_Y gilt
+  // fuer das unskalierte Modell und waechst mit dem Hoehenfaktor mit.
+  const barY = BAR_Y[buildingType] * scale.y;
+  group.add(createBar(hpFillMaterial, 'hpFill', 'hpBar', barY));
+  group.add(createBar(captureFillMaterial, 'captureFill', 'captureBar', barY - BAR_HEIGHT * 1.6));
   return group;
 }
 

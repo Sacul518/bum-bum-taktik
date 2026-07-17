@@ -35,11 +35,13 @@ Reihenfolge einhalten, jede Aufgabe einzeln verifizieren + committen:
   (grau = neutral). *Erledigt 2026-07-17: `centerCameraOn` +
   `getGroundViewportCorners` in camera.ts; der Ausschnitt ist wegen der
   Kameraneigung ein Parallelogramm, neu gezeichnet wird nur bei Bewegung.*
-- [ ] **3. Größenverhältnisse:** Gebäude sind kaum größer als Einheiten.
+- [x] **3. Größenverhältnisse:** Gebäude sind kaum größer als Einheiten.
   Gebäude-Modelle in `client/src/render/buildings.ts` deutlich vergrößern
   (HQ/Fabrik ca. 2–3 Kacheln Grundfläche, Türme spürbar hoch), Einheiten
   (`render/models.ts`) unverändert oder minimal kleiner. Rein visuell —
-  Server-Werte (`CAPTURE_RANGE` etc.) nicht anfassen.
+  Server-Werte (`CAPTURE_RANGE` etc.) nicht anfassen. *Erledigt 2026-07-17:
+  Skalierungsfaktor pro Typ (`MODEL_SCALE`) auf der Modellgruppe, Türme mit
+  extra Höhen-Stretch; HP-/Capture-Balken wachsen mit. Einheiten unverändert.*
 - [ ] **4. Gameplay-Loop v1 — Missionsziele:** `shared/src/missions.ts` um
   `objective` (`destroyHQ` | `captureCities(n)` | `eliminateAll`) und einen
   Briefing-Text erweitern; der Server (`server/src/index.ts` / `gameLoop.ts`)
