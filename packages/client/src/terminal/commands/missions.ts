@@ -62,10 +62,21 @@ function handleMissionCommand(args: string[]): string {
   return 'Verwendung: mission list | mission start <id>';
 }
 
+function completeMission(args: string[], argIndex: number): string[] {
+  if (argIndex === 0) return ['list', 'start'];
+  if (argIndex === 1 && args[0]?.toLowerCase() === 'start') {
+    const preset = getCurrentPreset();
+    return preset ? missionsForRegion(preset).map((m) => m.id) : [];
+  }
+  return [];
+}
+
 registerCommand('mission', 'Missionen: "mission list" zeigt die der aktuellen Region, "mission start <id>" startet eine.', (args) =>
   handleMissionCommand(args),
+  completeMission,
 );
 
 registerCommand('missions', 'Kurzform fuer "mission list" - "missions start <id>" funktioniert ebenfalls.', (args) =>
   handleMissionCommand(args),
+  completeMission,
 );

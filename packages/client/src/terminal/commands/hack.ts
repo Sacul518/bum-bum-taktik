@@ -73,4 +73,9 @@ registerCommand('hack', 'Hackt eine sichtbare Feind-Einheit: "hack <zielId>" - E
   if (!sendGameCommand({ type: 'hackStart', targetId })) return 'Keine Verbindung zum Server.';
   pending = { targetId, hackId: null, print: ctx.print };
   return `Verbinde mit ${targetId} ...`;
+}, (_args, argIndex) => {
+  if (argIndex !== 0) return [];
+  // Nur sichtbare Feinde sind hackbar - genau die stehen im Snapshot.
+  const units = getSelectionApi()?.getUnits() ?? [];
+  return units.filter((u) => u.faction === 'enemy').map((u) => u.id);
 });

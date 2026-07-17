@@ -27,4 +27,8 @@ registerCommand('map', 'Regionen: "map list" zeigt alle Karten, "map select <id>
   }
 
   return 'Verwendung: map list | map select <id>';
+}, (args, argIndex) => {
+  if (argIndex === 0) return ['list', 'select'];
+  if (argIndex === 1 && args[0]?.toLowerCase() === 'select') return Object.keys(MAP_PRESETS);
+  return [];
 });

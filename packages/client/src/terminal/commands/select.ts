@@ -71,6 +71,11 @@ function selectByIds(api: SelectionApi, ids: string[]): string {
   return [...errors, `${valid.length} Einheit(en) ausgewaehlt.`].join('\n');
 }
 
+function ownUnitIds(): string[] {
+  const api = getReadyApi();
+  return api ? api.getUnits().filter((u) => u.faction === 'player').map((u) => u.id) : [];
+}
+
 registerCommand(
   'select',
   'Truppenauswahl: "select <id...>", "select all [land|water|air]", "select none", "select"/"select list" zeigt Auswahl.',
@@ -87,5 +92,11 @@ registerCommand(
     if (sub === 'all') return selectAll(api, args[1]?.toLowerCase());
 
     return selectByIds(api, args);
+  },
+  (args, argIndex) => {
+    if (argIndex === 0) return ['all', 'none', 'list', ...ownUnitIds()];
+    if (args[0]?.toLowerCase() === 'all') return argIndex === 1 ? [...DOMAINS] : [];
+    // Mehrere IDs hintereinander sind erlaubt - immer weiter eigene IDs anbieten.
+    return ownUnitIds();
   },
 );
