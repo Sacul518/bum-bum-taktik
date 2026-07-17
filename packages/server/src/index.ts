@@ -17,7 +17,8 @@ import {
   type TerrainMap,
   type WalkabilityGrids,
 } from '@bum-bum-taktik/shared';
-import { advanceUnits, getUnits, initUnits, orderDisembark, orderEmbark, setAttackTarget, setUnitTargets } from './gameLoop.js';
+import { advanceUnits, getUnits, initUnits, orderDisembark, orderEmbark, setAttackTarget, setUnitTargets, spawnProducedUnit } from './gameLoop.js';
+import { buildingSnapshots, initBuildings, updateBuildings } from './buildings.js';
 import { filterVisibleEntities } from './visibility.js';
 import { abortHack, attemptHack, clearAllHacks, expireTimedOutHacks, startHack } from './hacking.js';
 import { activeReconZones, clearReconZones, requestRecon } from './recon.js';
@@ -59,6 +60,7 @@ function switchMap(presetId: MapPresetId, setup?: MissionUnitSetup[]): void {
   clearReconZones();
   missionEnded = false;
   initUnits(walkability, setup);
+  initBuildings(walkability);
   console.log(`Karte generiert: Preset "${preset.name}" (${map.width}x${map.height}, Seed ${preset.gen.seed ?? 1})`);
 }
 
@@ -194,7 +196,13 @@ setInterval(() => {
     }
   }
 
-  const { entities, shots } = advanceUnits();
+  // Gebaeude-Tick VOR den Einheiten: Turm-Schaden und frisch produzierte
+  // Einheiten sind dann im selben advanceUnits/Snapshot schon beruecksichtigt
+  // (Turm-Opfer werden von removeDeadUnits entfernt, neue Infanterie taucht
+  // sofort in den entities auf).
+  const towerShots = updateBuildings(getUnits(), spawnProducedUnit);
+  const { entities, shots: unitShots } = advanceUnits();
+  const shots = [...unitShots, ...towerShots];
 
   // Siegpruefung (docs/KONZEPT.md Abschnitt 3.2): nur bei aktiver Mission und
   // nur bis zum ersten Ergebnis. Beide Seiten weg (theoretisch moeglich, wenn
@@ -220,13 +228,15 @@ setInterval(() => {
   }
 
   const reconZones = activeReconZones();
-  const { entities: visibleEntities, visibleEnemyIds } = filterVisibleEntities(entities, shots, reconZones);
+  const buildings = buildingSnapshots();
+  const { entities: visibleEntities, visibleEnemyIds } = filterVisibleEntities(entities, shots, reconZones, buildings);
   const state: StateUpdate = {
     type: 'state',
     tick,
     entities: visibleEntities,
     shots,
     visibleEnemyIds,
+    buildings,
     ...(reconZones.length > 0 ? { reconZones } : {}),
   };
   const payload = encodeServerMessage(state);

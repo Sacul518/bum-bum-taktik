@@ -19,6 +19,7 @@ import {
   type WalkabilityGrids,
 } from '@bum-bum-taktik/shared';
 import { updateEnemyAggro } from './ai.js';
+import { findBuilding } from './buildings.js';
 
 // Ohne Mission (freie Aufstellung, docs/KONZEPT.md Abschnitt 3.2): eine
 // Spieler-Einheit pro Domain-Typ plus zwei stillstehende Feind-Einheiten als
@@ -66,6 +67,12 @@ export interface UnitState {
 
 let units: UnitState[] = [];
 let activeGrids: WalkabilityGrids | null = null;
+
+// Fortlaufender Zaehler fuer fabrik-produzierte Einheiten (spawnProducedUnit),
+// Reset bei jedem Kartenwechsel (initUnits). Eigener "p"-Namensraum
+// (infantry-p1, enemy-infantry-p2, ...), damit die IDs nie mit den
+// Start-Aufstellungs-IDs (infantry-1, ...) kollidieren.
+let producedCounter = 0;
 
 // Server-/Welt-Koordinaten sind auf die Kartenmitte zentriert (wie
 // offsetX/offsetZ beim Terrain-Rendering im Client), das Begehbarkeits-
@@ -190,6 +197,7 @@ function spawnFromSetup(setup: MissionUnitSetup[], grids: WalkabilityGrids, occu
 
 export function initUnits(grids: WalkabilityGrids, setup?: MissionUnitSetup[]): void {
   activeGrids = grids;
+  producedCounter = 0;
   const occupied = new Set<string>();
 
   if (setup) {
@@ -256,21 +264,52 @@ export function setUnitTargets(unitIds: string[], targetWorldX: number, targetWo
 
 export function setAttackTarget(unitId: string, targetId: string): void {
   const attacker = findUnit(unitId);
+  if (!attacker || attacker.faction !== 'player' || attacker.embarkedInId) return;
+
   const target = findUnit(targetId);
+  if (!target) {
+    // Kein Einheiten-Ziel: vielleicht ein Gebaeude (buildings.ts). Feindliche
+    // und neutrale Gebaeude sind angreifbar; sie zaehlen als Land-Ziel, also
+    // muss die Waffe des Angreifers die Land-Domain treffen koennen.
+    const building = findBuilding(targetId);
+    if (!building || building.faction === 'player') return;
+    if (!WEAPONS[attacker.unitType].targets.includes('land')) return;
+    attacker.attackTargetId = targetId;
+    attacker.attackGoal = null;
+    attacker.embarkTargetId = null;
+    attacker.embarkGoal = null;
+    return;
+  }
+
   // Clients befehligen nur die Spieler-Fraktion, und kein Friendly Fire:
   // Angriffsbefehle auf die eigene Fraktion werden ignoriert (Koop-Modus,
   // docs/KONZEPT.md Abschnitt 0).
-  if (!attacker || !target || attacker.faction !== 'player' || target.faction === 'player') return;
+  if (target.faction === 'player') return;
   // Ziele ausserhalb der Waffen-Domains ablehnen (Panzer vs. Flugzeug) -
   // sonst wuerde die Einheit ewig verfolgen, ohne je feuern zu koennen.
   if (!canTarget(attacker.unitType, target.unitType)) return;
-  // Eingestiegene Einheiten kaempfen nicht; eingestiegene Ziele sind
-  // unsichtbar und nicht anvisierbar.
-  if (attacker.embarkedInId || target.embarkedInId) return;
+  // Eingestiegene Ziele sind unsichtbar und nicht anvisierbar.
+  if (target.embarkedInId) return;
   attacker.attackTargetId = targetId;
   attacker.attackGoal = null;
   attacker.embarkTargetId = null;
   attacker.embarkGoal = null;
+}
+
+/**
+ * Fabrik-Produktion (buildings.ts): spawnt eine Infanterie-Einheit auf der
+ * naechsten freien Landkachel neben der Fabrik. false, wenn gerade keine
+ * begehbare Kachel in der Naehe ist - die Fabrik versucht es dann im
+ * naechsten Tick erneut (ihr Cooldown bleibt abgelaufen).
+ */
+export function spawnProducedUnit(faction: Faction, near: GridPoint): boolean {
+  if (!activeGrids) return false;
+  const tile = nearestWalkableTile(activeGrids, 'land', near, 4);
+  if (!tile) return false;
+  producedCounter += 1;
+  const id = faction === 'enemy' ? `enemy-infantry-p${producedCounter}` : `infantry-p${producedCounter}`;
+  units.push(createUnit(id, 'infantry', faction, tile, activeGrids));
+  return true;
 }
 
 // --- Transport: Ein-/Aussteigen (Aufgabe "Infanterie-/Fahrzeug-Interaktion") ---
@@ -419,10 +458,12 @@ function advanceUnit(unit: UnitState, grids: WalkabilityGrids): void {
 // Verfolgung bei explizitem Angriffsbefehl: ausserhalb der Reichweite laeuft
 // die Einheit auf das Ziel zu, innerhalb bleibt sie stehen und feuert (siehe
 // resolveShots). Der Pfad wird nur neu geplant, wenn sich die Ziel-Kachel
-// geaendert hat - nicht jeden Tick.
+// geaendert hat - nicht jeden Tick. Das Ziel kann eine Einheit ODER ein
+// Gebaeude sein (beide haben x/y; Gebaeude stehen still, der Pfad wird also
+// genau einmal geplant).
 function updateAttackChase(unit: UnitState, grids: WalkabilityGrids): void {
   if (!unit.attackTargetId) return;
-  const target = findUnit(unit.attackTargetId);
+  const target = findUnit(unit.attackTargetId) ?? findBuilding(unit.attackTargetId);
   if (!target) {
     unit.attackTargetId = null;
     unit.attackGoal = null;
@@ -491,20 +532,41 @@ function resolveShots(): ShotEvent[] {
     // Eingestiegene Einheiten feuern nicht (kein Kampf aus dem Transport).
     if (unit.embarkedInId) continue;
     const target = selectFireTarget(unit);
-    if (!target) continue;
+    if (target) {
+      unit.cooldownMs = WEAPONS[unit.unitType].cooldownMs;
+      unit.heading = Math.atan2(target.y - unit.y, target.x - unit.x);
+      shots.push({
+        attackerId: unit.id,
+        targetId: target.id,
+        fromX: unit.x,
+        fromY: unit.y,
+        toX: target.x,
+        toY: target.y,
+        projectile: WEAPONS[unit.unitType].projectile,
+      });
+      pendingDamage.push({ targetId: target.id, damage: weaponDamage(unit.unitType, target.unitType) });
+      continue;
+    }
 
+    // Explizites Gebaeude-Ziel in Reichweite (setAttackTarget hat die
+    // Land-Domain schon geprueft). Kein bonusVs gegen Gebaeude, und der
+    // Schaden darf sofort abgezogen werden: Gebaeude schiessen in diesem
+    // Loop nicht zurueck (Tuerme feuern separat in buildings.ts), die
+    // "beide feuern gleichzeitig"-Regel gilt nur zwischen Einheiten.
+    const building = unit.attackTargetId ? findBuilding(unit.attackTargetId) : undefined;
+    if (!building || Math.hypot(building.x - unit.x, building.y - unit.y) > WEAPONS[unit.unitType].range) continue;
     unit.cooldownMs = WEAPONS[unit.unitType].cooldownMs;
-    unit.heading = Math.atan2(target.y - unit.y, target.x - unit.x);
+    unit.heading = Math.atan2(building.y - unit.y, building.x - unit.x);
     shots.push({
       attackerId: unit.id,
-      targetId: target.id,
+      targetId: building.id,
       fromX: unit.x,
       fromY: unit.y,
-      toX: target.x,
-      toY: target.y,
+      toX: building.x,
+      toY: building.y,
       projectile: WEAPONS[unit.unitType].projectile,
     });
-    pendingDamage.push({ targetId: target.id, damage: weaponDamage(unit.unitType, target.unitType) });
+    building.hp -= WEAPONS[unit.unitType].damage;
   }
 
   for (const { targetId, damage } of pendingDamage) {

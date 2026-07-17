@@ -19,6 +19,27 @@ export interface Vector2 {
 export type EntityId = string;
 export type PlayerId = string;
 
+// Gebaeude (docs/KONZEPT.md Abschnitt 9, "Gebaeude & Basen"): statische
+// Landmarken auf Landkacheln. Staedte starten neutral und koennen von
+// Infanterie eingenommen werden (BUILDINGS in constants.ts sagt, welche
+// Typen einnehmbar sind).
+export type BuildingType = 'hq' | 'factory' | 'city' | 'tower';
+
+export type BuildingFaction = Faction | 'neutral';
+
+export interface BuildingSnapshot {
+  id: EntityId;
+  buildingType: BuildingType;
+  faction: BuildingFaction;
+  x: number;
+  y: number;
+  hp: number;
+  /** Einnahme-Fortschritt 0..1 - nur gesetzt, waehrend eine Einnahme laeuft. */
+  captureProgress?: number;
+  /** Fraktion, die gerade einnimmt - nur zusammen mit captureProgress gesetzt. */
+  captureBy?: Faction;
+}
+
 export interface EntitySnapshot {
   id: EntityId;
   unitType: UnitType;

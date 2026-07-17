@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { VISION_RANGE, type EntitySnapshot, type ReconZone } from '@bum-bum-taktik/shared';
+import { BUILDINGS, VISION_RANGE, type BuildingSnapshot, type EntitySnapshot, type ReconZone } from '@bum-bum-taktik/shared';
 import { HEIGHT_SCALE } from './terrain.js';
 
 // Fog of War (docs/KONZEPT.md Abschnitt 9, Phase 2): eine Ebene ueber der
@@ -20,6 +20,7 @@ export interface FogOverlay {
   update(
     units: ReadonlyArray<Pick<EntitySnapshot, 'x' | 'y' | 'unitType' | 'faction'>>,
     reconZones?: ReadonlyArray<ReconZone>,
+    buildings?: ReadonlyArray<Pick<BuildingSnapshot, 'x' | 'y' | 'buildingType' | 'faction'>>,
   ): void;
   dispose(): void;
 }
@@ -97,6 +98,7 @@ export function createFogOverlay(mapWidth: number, mapHeight: number): FogOverla
   function update(
     units: ReadonlyArray<Pick<EntitySnapshot, 'x' | 'y' | 'unitType' | 'faction'>>,
     reconZones: ReadonlyArray<ReconZone> = [],
+    buildings: ReadonlyArray<Pick<BuildingSnapshot, 'x' | 'y' | 'buildingType' | 'faction'>> = [],
   ): void {
     // Erst alles verdunkeln - nur die Alpha-Bytes anfassen, R/G/B bleiben 0.
     for (let i = 3; i < data.length; i += 4) data[i] = DARK_ALPHA_BYTE;
@@ -104,6 +106,13 @@ export function createFogOverlay(mapWidth: number, mapHeight: number): FogOverla
     for (const unit of units) {
       if (unit.faction !== 'player') continue;
       punchCircle(unit.x, unit.y, VISION_RANGE[unit.unitType]);
+    }
+
+    // Spieler-Gebaeude sind stationaere Sichtquellen - derselbe Radius, den
+    // der Server fuer die Feind-Sichtbarkeit nutzt (visibility.ts).
+    for (const building of buildings) {
+      if (building.faction !== 'player') continue;
+      punchCircle(building.x, building.y, BUILDINGS[building.buildingType].vision);
     }
 
     // Aufklaerungs-Sweeps (Abschnitt 6): derselbe Bereich, den der Server

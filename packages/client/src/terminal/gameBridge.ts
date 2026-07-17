@@ -1,4 +1,5 @@
 import type {
+  BuildingSnapshot,
   ClientCommand,
   EntityId,
   EntitySnapshot,
@@ -44,6 +45,8 @@ export function sendGameCommand(command: ClientCommand): boolean {
 export interface SelectionApi {
   /** Alle Einheiten aus dem letzten Server-Snapshot (leer vor dem ersten Update). */
   getUnits(): EntitySnapshot[];
+  /** Alle Gebaeude aus dem letzten Server-Snapshot (immer komplett, siehe protocol.ts). */
+  getBuildings(): BuildingSnapshot[];
   getSelection(): EntityId[];
   /** Ersetzt die Auswahl komplett. */
   setSelection(ids: EntityId[]): void;

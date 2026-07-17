@@ -1,4 +1,4 @@
-import type { EntityId, EntitySnapshot, PlayerId, ProjectileKind } from './types.js';
+import type { BuildingSnapshot, EntityId, EntitySnapshot, PlayerId, ProjectileKind } from './types.js';
 import type { MapPresetId } from './procgen/presets.js';
 
 // Server -> Client, beim Verbindungsaufbau und erneut nach jedem
@@ -48,6 +48,12 @@ export interface StateUpdate {
   entities: EntitySnapshot[];
   shots: ShotEvent[];
   visibleEnemyIds: EntityId[]; // Fog-of-War: nur was das Team gerade sieht
+  /**
+   * Alle noch stehenden Gebaeude - bewusst IMMER komplett (auch im Fog of
+   * War): Gebaeude sind statische Landmarken, die man auf der Karte kennt,
+   * kein beweglicher Feind. Spart die Sichtbarkeits-Filterung.
+   */
+  buildings: BuildingSnapshot[];
   /** Nur gesetzt, solange mindestens ein Aufklaerungs-Sweep aktiv ist. */
   reconZones?: ReconZone[];
 }

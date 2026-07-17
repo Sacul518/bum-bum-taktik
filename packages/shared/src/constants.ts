@@ -1,4 +1,4 @@
-import type { Domain, ProjectileKind, UnitType } from './types.js';
+import type { BuildingType, Domain, ProjectileKind, UnitType } from './types.js';
 
 export const TICK_RATE_HZ = 12;
 export const TICK_INTERVAL_MS = 1000 / TICK_RATE_HZ;
@@ -80,6 +80,50 @@ export function weaponDamage(attacker: UnitType, target: UnitType): number {
   const weapon = WEAPONS[attacker];
   return Math.round(weapon.damage * (weapon.bonusVs?.[target] ?? 1));
 }
+
+// Gebaeude & Basen (Aufgabe 5): pro Karte stehen fest platzierte Gebaeude
+// (server/buildings.ts) - Hauptquartiere und Fabriken beider Fraktionen,
+// Wachtuerme am Feind-HQ, neutrale Staedte. Alle sind zerstoerbar; "vision"
+// zaehlt nur fuer Gebaeude der Spieler-Fraktion (Fog of War); einnehmbare
+// Gebaeude wechseln per Infanterie-Capture die Fraktion.
+export interface BuildingProfile {
+  name: string;
+  maxHp: number;
+  /** Sichtweite in Kacheln (nur Spieler-Gebaeude tragen zur Sicht bei). */
+  vision: number;
+  /** Einnehmbar durch Infanterie in CAPTURE_RANGE? */
+  capturable: boolean;
+}
+
+export const BUILDINGS: Record<BuildingType, BuildingProfile> = {
+  hq: { name: 'Hauptquartier', maxHp: 500, vision: 12, capturable: false },
+  factory: { name: 'Fabrik', maxHp: 300, vision: 8, capturable: true },
+  city: { name: 'Stadt', maxHp: 250, vision: 6, capturable: true },
+  tower: { name: 'Wachturm', maxHp: 200, vision: 10, capturable: false },
+};
+
+// Einnahme: Infanterie einer fremden Fraktion in CAPTURE_RANGE fuellt den
+// Fortschritt; ohne anwesende Infanterie faellt er wieder ab. Stehen beide
+// Fraktionen gleichzeitig daneben, pausiert die Einnahme (umkaempft).
+export const CAPTURE_RANGE = 3;
+export const CAPTURE_TIME_MS = 8_000;
+
+// Wachturm: einziges Gebaeude mit Waffe, feuert auf die naechste Einheit
+// der Gegenseite (alle Domains - Flak trifft auch Bodenziele). Startwerte
+// fuers Balancing wie bei WEAPONS.
+export const TOWER_WEAPON = {
+  name: 'Flak',
+  range: 7,
+  damage: 12,
+  cooldownMs: 1200,
+  projectile: 'flak' as ProjectileKind,
+} as const;
+
+// Fabrik-Produktion: alle FACTORY_PRODUCE_INTERVAL_MS eine Infanterie-
+// Einheit neben der Fabrik, gedeckelt auf FACTORY_PRODUCE_CAP pro Fabrik
+// und Karte (sonst wuerde eine vergessene Feind-Fabrik die Karte fluten).
+export const FACTORY_PRODUCE_INTERVAL_MS = 30_000;
+export const FACTORY_PRODUCE_CAP = 5;
 
 // Sichtweite in Kacheln pro Einheitentyp - Grundlage fuer Fog of War
 // (docs/KONZEPT.md Abschnitt 9, Phase 2): der Server schickt Feind-Einheiten

@@ -20,16 +20,17 @@ export const UNIT_Y_OFFSET: Record<UnitType, number> = {
 };
 
 // Zwei Rumpffarben pro Fraktion (Primaer = Rumpf, Sekundaer = Aufbauten),
-// dazu fraktionsneutrale Farben fuer Ketten/Laeufe/Kanzeln.
-const FACTION_PRIMARY: Record<Faction, number> = {
+// dazu fraktionsneutrale Farben fuer Ketten/Laeufe/Kanzeln. Exportiert,
+// weil die Gebaeude-Modelle (buildings.ts) dieselbe Farbwelt nutzen.
+export const FACTION_PRIMARY: Record<Faction, number> = {
   player: 0x5f7f3f, // Olivgruen
   enemy: 0x9e3b32, // Rostrot
 };
-const FACTION_SECONDARY: Record<Faction, number> = {
+export const FACTION_SECONDARY: Record<Faction, number> = {
   player: 0x46602e,
   enemy: 0x772b23,
 };
-const COLOR_DARK = 0x2e2e2e; // Ketten, Rohre, Reifen
+export const COLOR_DARK = 0x2e2e2e; // Ketten, Rohre, Reifen
 const COLOR_GLASS = 0x9fd4e8; // Cockpit-Kanzel
 
 // Materialien werden pro Farbe gecacht und von allen Einheiten geteilt -
@@ -37,7 +38,7 @@ const COLOR_GLASS = 0x9fd4e8; // Cockpit-Kanzel
 // Materialien insgesamt.
 const materialCache = new Map<number, THREE.MeshLambertMaterial>();
 
-function material(color: number): THREE.MeshLambertMaterial {
+export function material(color: number): THREE.MeshLambertMaterial {
   let cached = materialCache.get(color);
   if (!cached) {
     cached = new THREE.MeshLambertMaterial({ color });
@@ -46,7 +47,7 @@ function material(color: number): THREE.MeshLambertMaterial {
   return cached;
 }
 
-function box(width: number, height: number, depth: number, color: number, x: number, y: number, z: number): THREE.Mesh {
+export function box(width: number, height: number, depth: number, color: number, x: number, y: number, z: number): THREE.Mesh {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material(color));
   mesh.position.set(x, y, z);
   return mesh;

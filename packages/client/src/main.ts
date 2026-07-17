@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { DEFAULT_SERVER_PORT, MAP_PRESETS, TICK_INTERVAL_MS, TRANSPORT_CAPACITY, getMission } from '@bum-bum-taktik/shared';
-import type { EntitySnapshot, Faction } from '@bum-bum-taktik/shared';
+import type { BuildingFaction, BuildingSnapshot, EntitySnapshot, Faction } from '@bum-bum-taktik/shared';
 import {
   createCameraRig,
   updateCameraAspect,
@@ -14,6 +14,7 @@ import {
 import { createScene } from './render/scene.js';
 import { createTerrainMesh, intersectTerrain, sampleElevation } from './render/terrain.js';
 import { createUnitMesh, applySnapshot, setSelected } from './render/units.js';
+import { createBuildingMesh, applyBuildingSnapshot } from './render/buildings.js';
 import { createPathLine, updatePathLine } from './render/path.js';
 import { spawnTracer, updateTracers } from './render/tracers.js';
 import { createFogOverlay, type FogOverlay } from './render/fog.js';
@@ -88,6 +89,13 @@ let previousSnapshot: BufferedSnapshot | null = null;
 let latestSnapshot: BufferedSnapshot | null = null;
 const unitMeshes = new Map<string, THREE.Object3D>();
 
+// Gebaeude (Aufgabe "Gebaeude & Basen"): statisch, keine Interpolation -
+// Position wird einmal beim Erzeugen gesetzt, pro Server-Tick aendern sich
+// nur HP-/Einnahme-Balken (applyBuildingSnapshot). Bei einem Fraktions-
+// wechsel (Capture) wird das Mesh neu gebaut (andere Farben).
+const buildingMeshes = new Map<string, THREE.Object3D>();
+let latestBuildings: BuildingSnapshot[] = [];
+
 // Auswahl (docs/KONZEPT.md Abschnitt 5.3): erster Klick auf eine Einheit
 // selektiert sie, ein zweiter Klick auf den Boden bewegt nur die Auswahl.
 // Aktuell genau eine Einheit gleichzeitig - Mehrfachauswahl (Drag-Box,
@@ -159,6 +167,9 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       }
       for (const mesh of unitMeshes.values()) scene.remove(mesh);
       unitMeshes.clear();
+      for (const mesh of buildingMeshes.values()) scene.remove(mesh);
+      buildingMeshes.clear();
+      latestBuildings = [];
       selectedUnitIds.clear();
       previousSnapshot = null;
       latestSnapshot = null;
@@ -183,7 +194,8 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
 
       // Fog + Minimap nur pro Server-Tick (12 Hz) aktualisieren, nicht pro
       // Frame - beide arbeiten direkt auf den Snapshot-Positionen.
-      fogOverlay?.update(message.entities, message.reconZones ?? []);
+      latestBuildings = message.buildings;
+      fogOverlay?.update(message.entities, message.reconZones ?? [], message.buildings);
       minimap.update(message.entities);
 
       // Zerstoerte Einheiten (nicht mehr im Snapshot) aus der Szene entfernen.
@@ -192,6 +204,34 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
         scene.remove(mesh);
         unitMeshes.delete(id);
         selectedUnitIds.delete(id);
+      }
+
+      // Gebaeude abgleichen: neue erzeugen, bei Fraktionswechsel (Capture)
+      // mit den neuen Farben neu bauen, zerstoerte entfernen.
+      const buildingIds = new Set(message.buildings.map((building) => building.id));
+      for (const [id, mesh] of buildingMeshes) {
+        if (buildingIds.has(id)) continue;
+        scene.remove(mesh);
+        buildingMeshes.delete(id);
+      }
+      for (const building of message.buildings) {
+        let mesh = buildingMeshes.get(building.id);
+        if (mesh && mesh.userData.buildingFaction !== building.faction) {
+          scene.remove(mesh);
+          mesh = undefined;
+        }
+        if (!mesh) {
+          mesh = createBuildingMesh(building.buildingType, building.faction);
+          mesh.userData.buildingId = building.id;
+          mesh.userData.buildingFaction = building.faction;
+          const height = terrainElevation
+            ? sampleElevation(building.x, building.y, mapWidth, mapHeight, terrainElevation)
+            : 0;
+          mesh.position.set(building.x, height, building.y);
+          buildingMeshes.set(building.id, mesh);
+          scene.add(mesh);
+        }
+        applyBuildingSnapshot(mesh, building);
       }
 
       for (const shot of message.shots) {
@@ -246,6 +286,7 @@ bindGameCommands((command) => connection.send(command));
 // widersprechen.
 bindSelection({
   getUnits: () => (latestSnapshot ? Array.from(latestSnapshot.entities.values()) : []),
+  getBuildings: () => latestBuildings,
   getSelection: () => Array.from(selectedUnitIds),
   setSelection: (ids) => {
     selectedUnitIds.clear();
@@ -316,6 +357,20 @@ function raycastUnit(clientX: number, clientY: number): string | null {
     hitObject = hitObject.parent;
   }
   return (hitObject?.userData.unitId as string | undefined) ?? null;
+}
+
+// Wie raycastUnit, aber gegen die Gebaeude-Meshes - Klick auf ein feindliches
+// oder neutrales Gebaeude wird zum Angriffsbefehl (pointerup unten).
+function raycastBuilding(clientX: number, clientY: number): string | null {
+  setRayFromPointer(clientX, clientY);
+  const hits = raycaster.intersectObjects(Array.from(buildingMeshes.values()), true);
+  if (hits.length === 0) return null;
+
+  let hitObject: THREE.Object3D | null = hits[0]!.object;
+  while (hitObject && !hitObject.userData.buildingId) {
+    hitObject = hitObject.parent;
+  }
+  return (hitObject?.userData.buildingId as string | undefined) ?? null;
 }
 
 // Aktive Finger/Zeiger in einer Map<pointerId, {x,y}> verfolgt (docs/KONZEPT.md
@@ -436,12 +491,26 @@ renderer.domElement.addEventListener('pointerup', (event) => {
           selectedUnitIds.add(clickedUnitId);
         }
       }
-    } else if (drag.anchorWorld && selectedUnitIds.size > 0) {
-      connection.send({
-        type: 'move',
-        unitIds: Array.from(selectedUnitIds),
-        target: [drag.anchorWorld.x, drag.anchorWorld.z],
-      });
+    } else {
+      // Kein Einheiten-Treffer: Gebaeude pruefen. Klick auf ein feindliches
+      // oder neutrales Gebaeude = Angriffsbefehl fuer die Auswahl (der Server
+      // lehnt Waffen ohne Land-Domain selbst ab); eigene Gebaeude schlucken
+      // den Klick nur (kein versehentlicher Move-Befehl "in das Gebaeude").
+      const clickedBuildingId = raycastBuilding(event.clientX, event.clientY);
+      if (clickedBuildingId) {
+        const buildingFaction = buildingMeshes.get(clickedBuildingId)?.userData.buildingFaction as BuildingFaction | undefined;
+        if (buildingFaction !== 'player') {
+          for (const unitId of selectedUnitIds) {
+            connection.send({ type: 'attack', unitId, targetId: clickedBuildingId });
+          }
+        }
+      } else if (drag.anchorWorld && selectedUnitIds.size > 0) {
+        connection.send({
+          type: 'move',
+          unitIds: Array.from(selectedUnitIds),
+          target: [drag.anchorWorld.x, drag.anchorWorld.z],
+        });
+      }
     }
   }
 
