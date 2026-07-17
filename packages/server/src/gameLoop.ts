@@ -1,6 +1,8 @@
 import {
+  EMBARK_RANGE,
   MAX_HP,
   TICK_INTERVAL_MS,
+  TRANSPORT_CAPACITY,
   UNIT_DOMAIN,
   WEAPONS,
   canTarget,
@@ -50,6 +52,14 @@ export interface UnitState {
   attackTargetId: string | null;
   /** Kachel, zu der zuletzt ein Verfolgungs-Pfad berechnet wurde - verhindert, dass jeder Tick neu geplant wird. */
   attackGoal: GridPoint | null;
+  /** Einsteige-Befehl: Transport, zu dem die Einheit laeuft (Infanterie). */
+  embarkTargetId: string | null;
+  /** Kachel, zu der zuletzt der Einsteige-Anlauf geplant wurde (wie attackGoal). */
+  embarkGoal: GridPoint | null;
+  /** Transport, in dem die Einheit gerade sitzt - dann weder sichtbar noch aktiv. */
+  embarkedInId: string | null;
+  /** IDs der aktuell eingestiegenen Einheiten (nur Transporter). */
+  passengerIds: string[];
   /** Verbleibende Wegpunkte in Grid-Koordinaten, naechster zuerst. */
   path: GridPoint[];
 }
@@ -137,6 +147,10 @@ function createUnit(id: string, unitType: UnitType, faction: Faction, spawnTile:
     stunnedMs: 0,
     attackTargetId: null,
     attackGoal: null,
+    embarkTargetId: null,
+    embarkGoal: null,
+    embarkedInId: null,
+    passengerIds: [],
     path: [],
   };
 }
@@ -224,9 +238,14 @@ export function setUnitTargets(unitIds: string[], targetWorldX: number, targetWo
     // Clients steuern nur die Spieler-Fraktion; Befehle an Feind-Einheiten
     // (z. B. durch Anklicken eines Feindes) werden ignoriert.
     if (unit.faction !== 'player') continue;
-    // Ein Bewegungsbefehl ueberschreibt einen laufenden Angriffsbefehl.
+    // Eingestiegene Einheiten koennen sich nicht selbst bewegen - erst
+    // aussteigen (disembark).
+    if (unit.embarkedInId) continue;
+    // Ein Bewegungsbefehl ueberschreibt laufende Angriffs-/Einsteige-Befehle.
     unit.attackTargetId = null;
     unit.attackGoal = null;
+    unit.embarkTargetId = null;
+    unit.embarkGoal = null;
     const startTile = worldToGrid(unit.x, unit.y, grids);
     // findPath liefert null, wenn das Ziel in einer anderen Domain liegt
     // oder unerreichbar ist (z. B. Panzer klickt auf Wasser) - die Einheit
@@ -245,8 +264,135 @@ export function setAttackTarget(unitId: string, targetId: string): void {
   // Ziele ausserhalb der Waffen-Domains ablehnen (Panzer vs. Flugzeug) -
   // sonst wuerde die Einheit ewig verfolgen, ohne je feuern zu koennen.
   if (!canTarget(attacker.unitType, target.unitType)) return;
+  // Eingestiegene Einheiten kaempfen nicht; eingestiegene Ziele sind
+  // unsichtbar und nicht anvisierbar.
+  if (attacker.embarkedInId || target.embarkedInId) return;
   attacker.attackTargetId = targetId;
   attacker.attackGoal = null;
+  attacker.embarkTargetId = null;
+  attacker.embarkGoal = null;
+}
+
+// --- Transport: Ein-/Aussteigen (Aufgabe "Infanterie-/Fahrzeug-Interaktion") ---
+
+// Naechste fuer die Domain begehbare Kachel um "center" (Ring-Suche wie
+// findSpawnTile, aber klein und ohne occupied-Logik). Noetig, weil die
+// Kachel eines Boots (Wasser) fuer Infanterie (Land) nie begehbar ist -
+// als Anlauf-/Absetzziel dient die naechstgelegene Landkachel daneben.
+function nearestWalkableTile(grids: WalkabilityGrids, domain: Domain, center: GridPoint, maxRadius: number): GridPoint | null {
+  for (let radius = 0; radius <= maxRadius; radius++) {
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+        const x = center.x + dx;
+        const y = center.y + dy;
+        if (isWalkable(grids, domain, x, y)) return { x, y };
+      }
+    }
+  }
+  return null;
+}
+
+/** Einsteige-Befehl: die Einheiten laufen zum Transport und steigen bei Ankunft ein (updateEmbarkChase). */
+export function orderEmbark(unitIds: string[], transportId: string): void {
+  const transport = findUnit(transportId);
+  if (!transport || transport.faction !== 'player' || transport.embarkedInId) return;
+  if (TRANSPORT_CAPACITY[transport.unitType] === 0) return;
+
+  for (const unitId of unitIds) {
+    const unit = findUnit(unitId);
+    // Nur eigene Infanterie kann einsteigen; Transporter selbst und bereits
+    // Eingestiegene nicht.
+    if (!unit || unit.faction !== 'player' || unit.unitType !== 'infantry') continue;
+    if (unit.id === transportId || unit.embarkedInId) continue;
+    unit.embarkTargetId = transportId;
+    unit.embarkGoal = null;
+    unit.attackTargetId = null;
+    unit.attackGoal = null;
+    unit.path = [];
+  }
+}
+
+/** Setzt alle Passagiere auf begehbare Kacheln neben dem Transport ab (wer keinen Platz findet, bleibt drin). */
+export function orderDisembark(transportId: string): void {
+  if (!activeGrids) return;
+  const grids = activeGrids;
+  const transport = findUnit(transportId);
+  if (!transport || transport.faction !== 'player' || transport.passengerIds.length === 0) return;
+
+  const transportTile = worldToGrid(transport.x, transport.y, grids);
+  const remaining: string[] = [];
+  const taken = new Set<string>();
+
+  for (const passengerId of transport.passengerIds) {
+    const passenger = findUnit(passengerId);
+    if (!passenger) continue;
+    // Pro Passagier eine eigene Kachel (taken), damit sie nicht alle exakt
+    // uebereinander landen; Radius 3 reicht fuer 4 Passagiere locker.
+    const tile = nearestFreeWalkableTile(grids, UNIT_DOMAIN[passenger.unitType], transportTile, 3, taken);
+    if (!tile) {
+      remaining.push(passengerId);
+      continue;
+    }
+    taken.add(`${tile.x},${tile.y}`);
+    const world = gridToWorld(tile, grids);
+    passenger.x = world.x;
+    passenger.y = world.y;
+    passenger.embarkedInId = null;
+    passenger.path = [];
+  }
+  transport.passengerIds = remaining;
+}
+
+// Wie nearestWalkableTile, aber ueberspringt bereits vergebene Kacheln -
+// nur fuers Absetzen mehrerer Passagiere in einem Zug.
+function nearestFreeWalkableTile(grids: WalkabilityGrids, domain: Domain, center: GridPoint, maxRadius: number, taken: Set<string>): GridPoint | null {
+  for (let radius = 0; radius <= maxRadius; radius++) {
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+        const x = center.x + dx;
+        const y = center.y + dy;
+        if (taken.has(`${x},${y}`)) continue;
+        if (isWalkable(grids, domain, x, y)) return { x, y };
+      }
+    }
+  }
+  return null;
+}
+
+// Anlauf zum Transport (analog updateAttackChase): ausserhalb von
+// EMBARK_RANGE laeuft die Einheit zur naechsten begehbaren Kachel am
+// Transport, innerhalb steigt sie ein. Der Pfad wird nur neu geplant, wenn
+// sich die Ziel-Kachel aendert (Transport faehrt weiter).
+function updateEmbarkChase(unit: UnitState, grids: WalkabilityGrids): void {
+  if (!unit.embarkTargetId) return;
+  const transport = findUnit(unit.embarkTargetId);
+  // Transport weg, voll oder selbst eingestiegen: Befehl verwerfen.
+  if (!transport || transport.passengerIds.length >= TRANSPORT_CAPACITY[transport.unitType]) {
+    unit.embarkTargetId = null;
+    unit.embarkGoal = null;
+    unit.path = [];
+    return;
+  }
+
+  if (Math.hypot(transport.x - unit.x, transport.y - unit.y) <= EMBARK_RANGE) {
+    transport.passengerIds.push(unit.id);
+    unit.embarkedInId = transport.id;
+    unit.embarkTargetId = null;
+    unit.embarkGoal = null;
+    unit.path = [];
+    return;
+  }
+
+  const transportTile = worldToGrid(transport.x, transport.y, grids);
+  const goalTile = nearestWalkableTile(grids, UNIT_DOMAIN[unit.unitType], transportTile, 3);
+  if (!goalTile) return; // Transport gerade unerreichbar (z. B. Boot auf offener See)
+  if (!unit.embarkGoal || unit.embarkGoal.x !== goalTile.x || unit.embarkGoal.y !== goalTile.y) {
+    unit.embarkGoal = goalTile;
+    const startTile = worldToGrid(unit.x, unit.y, grids);
+    unit.path = findPath(grids, UNIT_DOMAIN[unit.unitType], startTile, goalTile) ?? [];
+  }
 }
 
 function advanceUnit(unit: UnitState, grids: WalkabilityGrids): void {
@@ -315,6 +461,9 @@ function selectFireTarget(unit: UnitState): UnitState | null {
   let nearestDistance = Infinity;
   for (const other of units) {
     if (other.faction === unit.faction) continue;
+    // Eingestiegene Einheiten sind im Transport unsichtbar und ungeschuetzt
+    // nur ueber ihn angreifbar.
+    if (other.embarkedInId) continue;
     if (!canTarget(unit.unitType, other.unitType)) continue;
     const distance = Math.hypot(other.x - unit.x, other.y - unit.y);
     if (distance <= range && distance < nearestDistance) {
@@ -339,6 +488,8 @@ function resolveShots(): ShotEvent[] {
     // laeuft oben trotzdem weiter ab, damit sie nach dem Stun nicht auch
     // noch eine volle Feuerpause nachholen muessen.
     if (unit.stunnedMs > 0) continue;
+    // Eingestiegene Einheiten feuern nicht (kein Kampf aus dem Transport).
+    if (unit.embarkedInId) continue;
     const target = selectFireTarget(unit);
     if (!target) continue;
 
@@ -368,12 +519,27 @@ function removeDeadUnits(): void {
   const dead = new Set(units.filter((unit) => unit.hp <= 0).map((unit) => unit.id));
   if (dead.size === 0) return;
 
-  units = units.filter((unit) => unit.hp > 0);
+  // Passagiere sterben mit ihrem Transport - Einsteigen ist Schutz UND
+  // Risiko. (Eingestiegene sind sonst nirgends angreifbar, siehe
+  // selectFireTarget.)
+  for (const unit of units) {
+    if (unit.embarkedInId && dead.has(unit.embarkedInId)) dead.add(unit.id);
+  }
+
+  units = units.filter((unit) => !dead.has(unit.id));
   for (const unit of units) {
     if (unit.attackTargetId && dead.has(unit.attackTargetId)) {
       unit.attackTargetId = null;
       unit.attackGoal = null;
       unit.path = [];
+    }
+    if (unit.embarkTargetId && dead.has(unit.embarkTargetId)) {
+      unit.embarkTargetId = null;
+      unit.embarkGoal = null;
+      unit.path = [];
+    }
+    if (dead.size > 0 && unit.passengerIds.length > 0) {
+      unit.passengerIds = unit.passengerIds.filter((id) => !dead.has(id));
     }
   }
 }
@@ -385,10 +551,21 @@ export function advanceUnits(): { entities: EntitySnapshot[]; shots: ShotEvent[]
   updateEnemyAggro(units);
 
   for (const unit of units) {
+    // Eingestiegene Einheiten fahren nur mit: Position folgt dem Transport
+    // (relevant fuers Aussteigen und falls der Transport faellt).
+    if (unit.embarkedInId) {
+      const transport = findUnit(unit.embarkedInId);
+      if (transport) {
+        unit.x = transport.x;
+        unit.y = transport.y;
+      }
+      continue;
+    }
     // Gestunnte Einheiten (Hack, hacking.ts) stehen still; der Stun-Timer
     // laeuft in echten ms pro Tick ab, wie cooldownMs in resolveShots.
     unit.stunnedMs = Math.max(0, unit.stunnedMs - TICK_INTERVAL_MS);
     if (unit.stunnedMs > 0) continue;
+    updateEmbarkChase(unit, grids);
     updateAttackChase(unit, grids);
     advanceUnit(unit, grids);
   }
@@ -396,19 +573,24 @@ export function advanceUnits(): { entities: EntitySnapshot[]; shots: ShotEvent[]
   const shots = resolveShots();
   removeDeadUnits();
 
-  const entities = units.map((unit) => ({
-    id: unit.id,
-    unitType: unit.unitType,
-    faction: unit.faction,
-    x: unit.x,
-    y: unit.y,
-    heading: unit.heading,
-    hp: unit.hp,
-    path: unit.path.map((tile) => gridToWorld(tile, grids)),
-    // Optionales Feld nur setzen, wenn es zutrifft (spart Snapshot-Bytes und
-    // vertraegt sich mit exactOptionalPropertyTypes).
-    ...(unit.stunnedMs > 0 ? { stunned: true } : {}),
-  }));
+  // Eingestiegene Einheiten tauchen nicht in den Snapshots auf (unsichtbar,
+  // tragen keine Sicht bei); ihr Transport meldet stattdessen die Anzahl.
+  const entities = units
+    .filter((unit) => !unit.embarkedInId)
+    .map((unit) => ({
+      id: unit.id,
+      unitType: unit.unitType,
+      faction: unit.faction,
+      x: unit.x,
+      y: unit.y,
+      heading: unit.heading,
+      hp: unit.hp,
+      path: unit.path.map((tile) => gridToWorld(tile, grids)),
+      // Optionale Felder nur setzen, wenn sie zutreffen (spart Snapshot-Bytes
+      // und vertraegt sich mit exactOptionalPropertyTypes).
+      ...(unit.stunnedMs > 0 ? { stunned: true } : {}),
+      ...(unit.passengerIds.length > 0 ? { passengers: unit.passengerIds.length } : {}),
+    }));
 
   return { entities, shots };
 }

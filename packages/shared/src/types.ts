@@ -35,4 +35,10 @@ export interface EntitySnapshot {
    * immer false, damit die Snapshots im Normalfall nicht groesser werden.
    */
   stunned?: boolean;
+  /**
+   * Anzahl eingestiegener Einheiten (nur bei Transportern mit Passagieren
+   * gesetzt, TRANSPORT_CAPACITY in constants.ts). Die Passagiere selbst
+   * tauchen nicht in den Snapshots auf, solange sie eingestiegen sind.
+   */
+  passengers?: number;
 }

@@ -56,6 +56,20 @@ export const WEAPONS: Record<UnitType, WeaponProfile> = {
   plane: { name: 'Raketen', range: 5, damage: 15, cooldownMs: 1500, targets: ['land', 'water', 'air'], bonusVs: { boat: 1.5 }, projectile: 'rocket' },
 };
 
+// Transport (Aufgabe "Infanterie-/Fahrzeug-Interaktion"): nur Infanterie
+// kann einsteigen, nur Boot und Flugzeug nehmen Passagiere. Eingestiegene
+// Einheiten sind unsichtbar, unverwundbar (sterben aber mit dem Transport!)
+// und tragen nichts zur Sicht bei. EMBARK_RANGE in Kacheln: ab dieser
+// Distanz zum Transport steigt die anlaufende Infanterie ein - gross genug,
+// dass eine Landkachel neben einer Wasserkachel (diagonal 1.41) reicht.
+export const TRANSPORT_CAPACITY: Record<UnitType, number> = {
+  tank: 0,
+  infantry: 0,
+  boat: 4,
+  plane: 2,
+};
+export const EMBARK_RANGE = 2;
+
 /** Kann dieser Angreifer-Typ diesen Ziel-Typ ueberhaupt treffen? */
 export function canTarget(attacker: UnitType, target: UnitType): boolean {
   return WEAPONS[attacker].targets.includes(UNIT_DOMAIN[target]);

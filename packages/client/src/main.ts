@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DEFAULT_SERVER_PORT, MAP_PRESETS, TICK_INTERVAL_MS, getMission } from '@bum-bum-taktik/shared';
+import { DEFAULT_SERVER_PORT, MAP_PRESETS, TICK_INTERVAL_MS, TRANSPORT_CAPACITY, getMission } from '@bum-bum-taktik/shared';
 import type { EntitySnapshot, Faction } from '@bum-bum-taktik/shared';
 import {
   createCameraRig,
@@ -420,8 +420,21 @@ renderer.domElement.addEventListener('pointerup', (event) => {
           connection.send({ type: 'attack', unitId, targetId: clickedUnitId });
         }
       } else {
-        selectedUnitIds.clear();
-        selectedUnitIds.add(clickedUnitId);
+        // Klick auf einen eigenen Transporter, waehrend NUR Infanterie
+        // ausgewaehlt ist = Einsteige-Befehl (Aufgabe "Infanterie-/Fahrzeug-
+        // Interaktion"); sonst wie bisher Auswahl wechseln. Wer den
+        // Transporter selbst auswaehlen will: erst Auswahl leeren
+        // ("select none") oder eine Nicht-Infanterie-Einheit dabei haben.
+        const clicked = latestSnapshot?.entities.get(clickedUnitId);
+        const selectedInfantry = Array.from(selectedUnitIds).filter(
+          (id) => latestSnapshot?.entities.get(id)?.unitType === 'infantry',
+        );
+        if (clicked && TRANSPORT_CAPACITY[clicked.unitType] > 0 && selectedInfantry.length > 0 && selectedInfantry.length === selectedUnitIds.size) {
+          connection.send({ type: 'embark', unitIds: selectedInfantry, transportId: clickedUnitId });
+        } else {
+          selectedUnitIds.clear();
+          selectedUnitIds.add(clickedUnitId);
+        }
       }
     } else if (drag.anchorWorld && selectedUnitIds.size > 0) {
       connection.send({

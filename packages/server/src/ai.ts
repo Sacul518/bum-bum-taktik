@@ -19,6 +19,8 @@ export function updateEnemyAggro(units: UnitState[]): void {
     let nearestDistance = Infinity;
     for (const other of units) {
       if (other.faction !== 'player') continue;
+      // Eingestiegene Einheiten sitzen unsichtbar im Transport - kein Ziel.
+      if (other.embarkedInId) continue;
       // Nur Ziele erfassen, die die eigene Waffe treffen kann (WEAPONS.targets) -
       // ein Feind-Panzer soll nicht ewig einem Flugzeug hinterherfahren.
       if (!canTarget(unit.unitType, other.unitType)) continue;

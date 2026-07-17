@@ -216,6 +216,21 @@ export interface ReconResultMessage {
   remainingCooldownMs: number;
 }
 
+// Transport (docs/KONZEPT.md Abschnitt 9): Infanterie laeuft zum eigenen
+// Transporter und steigt ein, sobald sie nah genug ist (EMBARK_RANGE);
+// disembark setzt alle Passagiere auf begehbare Nachbarkacheln ab. Beide
+// Befehle validiert der Server (Fraktion, Kapazitaet, Platz zum Aussteigen).
+export interface EmbarkCommand {
+  type: 'embark';
+  unitIds: EntityId[];
+  transportId: EntityId;
+}
+
+export interface DisembarkCommand {
+  type: 'disembark';
+  transportId: EntityId;
+}
+
 export type ClientCommand =
   | MoveCommand
   | AttackCommand
@@ -225,4 +240,6 @@ export type ClientCommand =
   | HackStartCommand
   | HackAttemptCommand
   | HackAbortCommand
-  | ReconCommand;
+  | ReconCommand
+  | EmbarkCommand
+  | DisembarkCommand;

@@ -9,4 +9,5 @@ import './map.js';
 import './missions.js';
 import './recon.js';
 import './select.js';
+import './transport.js';
 import './units.js';

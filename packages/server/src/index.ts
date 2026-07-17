@@ -17,7 +17,7 @@ import {
   type TerrainMap,
   type WalkabilityGrids,
 } from '@bum-bum-taktik/shared';
-import { advanceUnits, getUnits, initUnits, setAttackTarget, setUnitTargets } from './gameLoop.js';
+import { advanceUnits, getUnits, initUnits, orderDisembark, orderEmbark, setAttackTarget, setUnitTargets } from './gameLoop.js';
 import { filterVisibleEntities } from './visibility.js';
 import { abortHack, attemptHack, clearAllHacks, expireTimedOutHacks, startHack } from './hacking.js';
 import { activeReconZones, clearReconZones, requestRecon } from './recon.js';
@@ -149,6 +149,10 @@ wss.on('connection', (socket) => {
       } else if (command.type === 'hackAbort') {
         const result = abortHack(String(command.hackId), playerId);
         if (result) socket.send(encodeServerMessage(result));
+      } else if (command.type === 'embark') {
+        orderEmbark(command.unitIds.map(String), String(command.transportId));
+      } else if (command.type === 'disembark') {
+        orderDisembark(String(command.transportId));
       } else if (command.type === 'recon') {
         // Zahlen kommen als JSON von aussen - NaN o. ae. abfangen, bevor der
         // Sweep in den Sichtbarkeits-Vergleich wandert.
@@ -197,8 +201,11 @@ setInterval(() => {
   // die letzten Einheiten sich im selben Tick gegenseitig zerstoeren) zaehlt
   // als Sieg - die Mission war, die Feinde loszuwerden.
   if (activeMissionId && !missionEnded) {
-    const playersAlive = entities.some((entity) => entity.faction === 'player');
-    const enemiesAlive = entities.some((entity) => entity.faction === 'enemy');
+    // Ueber getUnits() statt entities pruefen: eingestiegene Einheiten fehlen
+    // in den Snapshots, leben aber - ein Team, dessen letzte Infanterie im
+    // Boot sitzt, hat nicht verloren.
+    const playersAlive = getUnits().some((unit) => unit.faction === 'player');
+    const enemiesAlive = getUnits().some((unit) => unit.faction === 'enemy');
     if (!playersAlive || !enemiesAlive) {
       missionEnded = true;
       const payload = encodeServerMessage({

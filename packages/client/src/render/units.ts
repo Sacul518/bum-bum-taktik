@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MAX_HP, type EntitySnapshot, type Faction, type UnitType } from '@bum-bum-taktik/shared';
+import { MAX_HP, TRANSPORT_CAPACITY, type EntitySnapshot, type Faction, type UnitType } from '@bum-bum-taktik/shared';
 import { UNIT_Y_OFFSET, createUnitModel } from './models.js';
 
 // Einheiten als prozedurale Low-Poly-3D-Modelle (models.ts) statt der
@@ -77,6 +77,44 @@ function createHpBar(unitType: UnitType, faction: Faction): THREE.Object3D {
   return bar;
 }
 
+// Passagier-Anzeige (Transport): eine Reihe kleiner weisser Quadrate ueber
+// dem HP-Balken, eines pro eingestiegener Einheit. Slots werden einmal fuer
+// die maximale Kapazitaet angelegt und per Sichtbarkeit geschaltet.
+const passengerMaterial = new THREE.SpriteMaterial({ color: 0xffffff });
+const PASSENGER_DOT_SIZE = 0.16;
+
+function createPassengerDots(unitType: UnitType): THREE.Object3D | null {
+  const capacity = TRANSPORT_CAPACITY[unitType];
+  if (capacity === 0) return null;
+
+  const dots = new THREE.Group();
+  dots.name = 'passengerDots';
+  const y = UNIT_Y_OFFSET[unitType] + 1.25 + HP_BAR_HEIGHT * 3.2;
+  for (let i = 0; i < capacity; i++) {
+    const dot = new THREE.Sprite(passengerMaterial);
+    dot.scale.set(PASSENGER_DOT_SIZE, PASSENGER_DOT_SIZE, 1);
+    // Reihe mittig ueber der Einheit ausrichten.
+    dot.position.set((i - (capacity - 1) / 2) * PASSENGER_DOT_SIZE * 1.5, y, 0);
+    dot.visible = false;
+    dot.raycast = () => {};
+    dots.add(dot);
+  }
+  return dots;
+}
+
+// heading: die Punktreihe ist seitlich versetzt und wuerde sich sonst mit
+// dem Fahrzeug mitdrehen (die ganze Gruppe rotiert in applySnapshot) - die
+// Gegenrotation haelt die Reihe bildschirmstabil, wie den HP-Balken, der
+// dasselbe Problem durch Sitzen auf der Drehachse vermeidet.
+function updatePassengerDots(group: THREE.Object3D, passengers: number, heading: number): void {
+  const dots = group.getObjectByName('passengerDots');
+  if (!dots) return;
+  dots.rotation.y = heading;
+  dots.children.forEach((dot, index) => {
+    dot.visible = index < passengers;
+  });
+}
+
 function updateHpBar(group: THREE.Object3D, hp: number, maxHp: number): void {
   const fill = group.getObjectByName('hpFill') as THREE.Sprite | undefined;
   if (!fill) return;
@@ -92,6 +130,8 @@ export function createUnitMesh(unitType: UnitType, faction: Faction): THREE.Grou
   group.add(createUnitModel(unitType, faction));
   group.add(createSelectionRing());
   group.add(createHpBar(unitType, faction));
+  const passengerDots = createPassengerDots(unitType);
+  if (passengerDots) group.add(passengerDots);
   return group;
 }
 
@@ -110,6 +150,7 @@ export function applySnapshot(object: THREE.Object3D, snapshot: EntitySnapshot, 
   object.position.z = snapshot.y;
   object.rotation.y = -snapshot.heading;
   updateHpBar(object, snapshot.hp, MAX_HP[snapshot.unitType]);
+  updatePassengerDots(object, snapshot.passengers ?? 0, snapshot.heading);
 
   const stun = object.getObjectByName('stunMarker');
   if (stun) stun.visible = snapshot.stunned === true;
