@@ -18,7 +18,30 @@ export function updatePathLine(line: THREE.Line, groundPoints: THREE.Vector3[]):
     line.visible = false;
     return;
   }
-  const raised = groundPoints.map((point) => new THREE.Vector3(point.x, point.y + HEIGHT_OFFSET, point.z));
-  line.geometry.setFromPoints(raised);
+
+  // setFromPoints() kann einen einmal angelegten Buffer nicht vergroessern:
+  // wird der Pfad laenger als alle bisherigen, warnt Three.js in JEDEM Frame
+  // ("Buffer size too small for points data") und zeichnet abgeschnitten.
+  // Deshalb: eigenen Buffer mit Reserve verwalten und bei Bedarf gegen einen
+  // groesseren tauschen; gezeichnet wird nur der befuellte Teil (DrawRange).
+  let position = line.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+  if (!position || position.count < groundPoints.length) {
+    let capacity = Math.max(position?.count ?? 0, 64);
+    while (capacity < groundPoints.length) capacity *= 2;
+    line.geometry.dispose();
+    line.geometry = new THREE.BufferGeometry();
+    position = new THREE.BufferAttribute(new Float32Array(capacity * 3), 3);
+    line.geometry.setAttribute('position', position);
+  }
+
+  for (let i = 0; i < groundPoints.length; i++) {
+    const point = groundPoints[i]!;
+    position.setXYZ(i, point.x, point.y + HEIGHT_OFFSET, point.z);
+  }
+  position.needsUpdate = true;
+  line.geometry.setDrawRange(0, groundPoints.length);
+  // Ohne aktuelle Bounding-Sphere wuerde das Frustum-Culling die Linie
+  // faelschlich ausblenden, sobald die alte (kleinere) Sphere ausserhalb liegt.
+  line.geometry.computeBoundingSphere();
   line.visible = true;
 }

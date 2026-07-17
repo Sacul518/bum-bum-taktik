@@ -12,7 +12,7 @@ import {
   getGroundAxes,
 } from './render/camera.js';
 import { createScene } from './render/scene.js';
-import { createTerrainMesh, sampleElevation } from './render/terrain.js';
+import { createTerrainMesh, intersectTerrain, sampleElevation } from './render/terrain.js';
 import { createUnitMesh, applySnapshot, setSelected, preloadUnitAtlas } from './render/units.js';
 import { createPathLine, updatePathLine } from './render/path.js';
 import { spawnTracer, updateTracers } from './render/tracers.js';
@@ -265,7 +265,9 @@ bindSelection({
 // Bewegung zaehlt dagegen als Klick-zum-Ziel fuer die Einheit - beides teilt
 // sich denselben Boden-Raycast, daher hier zusammen implementiert.
 const raycaster = new THREE.Raycaster();
-const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+// Ebene fuers Pan-Dragging (Hoehe wird pro Drag auf die Anker-Hoehe gesetzt)
+// und als Fallback, solange noch kein Terrain da ist.
+const panPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const pointerNdc = new THREE.Vector2();
 const DRAG_THRESHOLD_PX = 6;
 
@@ -286,23 +288,33 @@ renderer.domElement.addEventListener(
   { passive: false },
 );
 
-function raycastGround(clientX: number, clientY: number): THREE.Vector3 | null {
+function setRayFromPointer(clientX: number, clientY: number): void {
   const rect = renderer.domElement.getBoundingClientRect();
   pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
   pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
   raycaster.setFromCamera(pointerNdc, camera);
+}
+
+// Bodenpunkt unter dem Zeiger: echtes 3D-Raycasting gegen das Hoehenfeld
+// (render/terrain.ts). Die fruehere feste y=0-Ebene traf bei geneigter
+// Kamera und erhoehtem/vertieftem Gelaende die falsche Kachel - man klickte
+// "durch den Boden" hindurch. Fallback auf die y=0-Ebene nur noch, solange
+// das erste hello (und damit das Terrain) fehlt.
+function raycastGround(clientX: number, clientY: number): THREE.Vector3 | null {
+  setRayFromPointer(clientX, clientY);
+  if (terrainElevation) {
+    return intersectTerrain(raycaster.ray, mapWidth, mapHeight, terrainElevation);
+  }
+  panPlane.constant = 0;
   const point = new THREE.Vector3();
-  return raycaster.ray.intersectPlane(groundPlane, point) ? point : null;
+  return raycaster.ray.intersectPlane(panPlane, point) ? point : null;
 }
 
 // Prueft, ob der Klick eine Einheit trifft (fuer Auswahl statt Bewegung).
 // Nutzt denselben Raycaster wie raycastGround(), daher muss setFromCamera()
 // hier erneut aufgerufen werden - der Raycaster ist zustandsbehaftet.
 function raycastUnit(clientX: number, clientY: number): string | null {
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-  pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointerNdc, camera);
+  setRayFromPointer(clientX, clientY);
   const hits = raycaster.intersectObjects(Array.from(unitMeshes.values()), true);
   if (hits.length === 0) return null;
 
@@ -383,8 +395,16 @@ renderer.domElement.addEventListener('pointermove', (event) => {
   }
 
   if (drag.moved && drag.anchorWorld) {
-    const currentWorld = raycastGround(event.clientX, event.clientY);
-    if (currentWorld) {
+    // Beim Pannen NICHT pro Bewegung neu aufs Terrain raycasten, sondern auf
+    // einer festen Ebene in Anker-Hoehe bleiben: sonst aendert jede
+    // Kamerabewegung ueber Huegeln die getroffene Hoehe und damit den
+    // errechneten Versatz - die Kamera wuerde ruckeln statt gleiten. So
+    // bleibt der beim pointerdown angefasste Gelaendepunkt exakt unterm
+    // Zeiger kleben.
+    setRayFromPointer(event.clientX, event.clientY);
+    panPlane.constant = -drag.anchorWorld.y;
+    const currentWorld = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(panPlane, currentWorld)) {
       panCamera(cameraRig, drag.anchorWorld.x - currentWorld.x, drag.anchorWorld.z - currentWorld.z);
     }
   }

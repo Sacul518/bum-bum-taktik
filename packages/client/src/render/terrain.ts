@@ -138,3 +138,76 @@ export function sampleElevation(worldX: number, worldZ: number, width: number, h
   const gz = Math.min(Math.max(Math.floor(worldZ + height / 2), 0), height - 1);
   return (elevation[gz * width + gx] as number) * HEIGHT_SCALE;
 }
+
+// Schrittweite des Ray-Marchings in Welteinheiten: deutlich kleiner als eine
+// Kachel (1x1), damit keine einzelne hohe Kachel uebersprungen wird.
+const MARCH_STEP = 0.25;
+// Bisektionsschritte nach dem gefundenen Vorzeichenwechsel: 16 Halbierungen
+// von 0.25 Welteinheiten ergeben < 0.00001 Kacheln Restfehler.
+const REFINE_STEPS = 16;
+
+// Schneidet einen Kamerastrahl mit dem Hoehenfeld (Ray-Marching + Bisektion)
+// statt mit dem Terrain-Mesh: das Mesh einer 500x500-Karte hat ueber eine
+// halbe Million Dreiecke, THREE.Raycaster darauf waere fuer Klicks und erst
+// recht fuers Pan-Dragging (ein Raycast pro pointermove) zu langsam. Das
+// Hoehenfeld dagegen kostet pro Schritt nur einen Array-Zugriff.
+// Ausserhalb der Karte gilt die Hoehe der naechsten Randkachel
+// (sampleElevation klemmt) - ein Klick neben die Karte liefert damit wie
+// bisher einen Bodenpunkt statt null, nur eben auf Randhoehe.
+export function intersectTerrain(
+  ray: THREE.Ray,
+  width: number,
+  height: number,
+  elevation: Float32Array,
+): THREE.Vector3 | null {
+  const dirY = ray.direction.y;
+  // Exakt waagerechter Strahl traefe nie eindeutig einen Bodenpunkt; die
+  // Kamera laesst minimal 8 Grad Neigung zu (render/camera.ts), der Fall ist
+  // also nur eine Absicherung.
+  if (Math.abs(dirY) < 1e-8) return null;
+
+  // Nur den t-Bereich abmarschieren, in dem der Strahl ueberhaupt zwischen
+  // hoechst- und tiefstmoeglicher Kachelhoehe liegt (Elevation ist -1..1).
+  const t1 = (HEIGHT_SCALE - ray.origin.y) / dirY;
+  const t2 = (-HEIGHT_SCALE - ray.origin.y) / dirY;
+  const tNear = Math.max(Math.min(t1, t2), 0);
+  const tFar = Math.max(t1, t2);
+  if (tFar < tNear) return null;
+
+  const point = new THREE.Vector3();
+  // Hoehe des Strahls minus Hoehe des Bodens an dieser Stelle: positiv =
+  // Strahl ist noch ueber dem Boden, negativ/0 = eingeschlagen.
+  function gapAt(t: number): number {
+    point.copy(ray.origin).addScaledVector(ray.direction, t);
+    return point.y - sampleElevation(point.x, point.z, width, height, elevation);
+  }
+
+  let tAbove = tNear;
+  if (gapAt(tNear) <= 0) {
+    // Strahl beginnt schon im/unterm Boden (theoretisch bei Kamera unter
+    // einem Berg) - dann ist der Startpunkt der beste Bodenpunkt.
+    return point.clone();
+  }
+
+  let tHit = -1;
+  for (let t = tNear + MARCH_STEP; t <= tFar + MARCH_STEP; t += MARCH_STEP) {
+    if (gapAt(t) <= 0) {
+      tHit = t;
+      break;
+    }
+    tAbove = t;
+  }
+  if (tHit < 0) return null;
+
+  // Vorzeichenwechsel zwischen tAbove und tHit einkreisen. Die Bisektion
+  // funktioniert auch an senkrechten Kachelwaenden, weil die Hoehenfunktion
+  // dort nur springt - der Treffer landet dann exakt an der Wand.
+  for (let i = 0; i < REFINE_STEPS; i++) {
+    const tMid = (tAbove + tHit) / 2;
+    if (gapAt(tMid) <= 0) tHit = tMid;
+    else tAbove = tMid;
+  }
+
+  gapAt(tHit);
+  return point.clone();
+}
