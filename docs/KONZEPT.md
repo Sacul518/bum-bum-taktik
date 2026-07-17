@@ -1,6 +1,6 @@
 # Bum Bum Taktik — Technisches Konzept & Architektur-Roadmap
 
-Stand: 2026-07-08. Dieses Dokument ist die Grundlage für die Entwicklung. Es wird laufend aktualisiert, wenn sich Entscheidungen ändern.
+Stand: 2026-07-17. Dieses Dokument ist die Grundlage für die Entwicklung. Es wird laufend aktualisiert, wenn sich Entscheidungen ändern.
 
 ## 0. Grundannahmen (bereits entschieden)
 
@@ -126,7 +126,7 @@ Dafür wurden drei Terrain-Typen ergänzt (nur hinten an `TERRAIN_TYPES` angehä
 
 ### 3.2 Missionen — Minimaldefinition (2026-07-11), startbar seit 2026-07-11
 
-Eine **Mission** gehört zu genau einer Region (= Map-Preset) und ist vorerst nur: `id`, `name`, `description` und eine **Startaufstellung** (Liste aus Einheitentyp + Fraktion + Anzahl). Definiert als Daten in `shared/src/missions.ts` (`MISSIONS`, `missionsForRegion`, `getMission`). Die Spawn-*Positionen* bleiben Server-Logik (Ring-Suche um die Kartenmitte). Bewusst noch **nicht** definiert: Siegbedingungen, Skript-Ereignisse, Belohnungen — das kommt, sobald die erste Mission wirklich spielbar ist. Ausgewählt werden Region und Mission über das In-Game-Terminal (Abschnitt 6).
+Eine **Mission** gehört zu genau einer Region (= Map-Preset) und ist vorerst nur: `id`, `name`, `description` und eine **Startaufstellung** (Liste aus Einheitentyp + Fraktion + Anzahl). Definiert als Daten in `shared/src/missions.ts` (`MISSIONS`, `missionsForRegion`, `getMission`). Die Spawn-*Positionen* bleiben Server-Logik (Ring-Suche um die Kartenmitte). Bewusst noch **nicht** definiert: Siegbedingungen, Skript-Ereignisse, Belohnungen — das kommt, sobald die erste Mission wirklich spielbar ist. *(Update 2026-07-17: Siegbedingungen und Belohnungen sind jetzt festgelegt — siehe Kasten „Gameplay-Loop, Wirtschaft & Meta“ in Abschnitt 9.)* Ausgewählt werden Region und Mission über das In-Game-Terminal (Abschnitt 6).
 
 **Umgesetzt:** `mission start <id>` im Terminal schickt den typisierten `startMission`-Befehl; der Server wechselt auf die Region der Mission (immer frische Generierung = Neustart), spawnt die Startaufstellung und schickt allen Clients ein neues `hello` mit `missionId`. `map select` verlässt eine laufende Mission (freie Aufstellung). Spawn-Regeln: Spieler nahe der Kartenmitte, Feinde im Ring (Mindestradius 20) **plus echtem Mindestabstand zu den tatsächlich platzierten Spieler-Einheiten** — die reine Ring-Logik reichte nicht, weil z. B. beim Meer-Preset die Kartenmitte im Wasser liegt und Spieler-Spawns weit vom Zentrum abgedrängt werden können.
 
@@ -338,6 +338,13 @@ Diese Aufteilung folgt bewusst den Ordnergrenzen, damit zwei Subagenten möglich
 > - **Protokoll:** `StateUpdate.buildings` enthält bewusst IMMER alle Gebäude (auch im FoW) — statische Landmarken, die man kennt, kein beweglicher Feind; spart die Sichtbarkeitsfilterung. Einnahme läuft als `captureProgress`/`captureBy` im Snapshot mit (gelber Fortschrittsbalken im Client).
 > - **Sieg/Niederlage** hängt weiterhin nur an Einheiten, nicht an Gebäuden — ein HQ-Verlust beendet keine Mission (spätere Ausbaustufe, z. B. "HQ zerstören"-Missionsziel).
 
+> **Gameplay-Loop, Wirtschaft & Meta — entschieden (2026-07-17), Umsetzung in drei Sessions:** Bestandsaufnahme mit Lucas: Das Spiel hat viele Systeme, aber keinen Gameplay-Loop — man landet in einer Mission ohne Ziel und Vorgaben. Dazu UX-Baustellen (Minimap ohne Klick-Navigation, FoW-Ebene deckt bei geneigter Kamera nicht, Einheiten so groß wie Gebäude, Terminal zeigt nicht, was mit welcher Einheit los ist). Festgelegt:
+> - **Kampagne zuerst** (Eroberungs-/Skirmish-Modus bleibt spätere Ausbaustufe): jede Mission bekommt ein klares Ziel (`objective`, z. B. `destroyHQ`, `captureCities(n)`, `eliminateAll`) und einen Briefing-Text; der Server prüft Sieg/Niederlage anhand des Ziels — Niederlage auch, wenn das eigene HQ fällt. 2–3 Missionen pro Region als Kette mit ansteigender Schwierigkeit, Folge-Mission wird erst nach Sieg freigeschaltet (Freischaltung vorerst nur im Server-Speicher; Persistenz kommt in Session C). Terminal: Briefing beim Start, `objective`-Befehl zeigt Zielstatus/Fortschritt.
+> - **Wirtschaft mit zwei Ressourcen** (bewusst gegen die einfachere Ein-Währungs-Variante entschieden, mehr Balancing-Aufwand in Kauf genommen): **Credits** aus eingenommenen Städten, **Material** aus Minen. Einheiten kosten Ressourcen und entstehen am passenden Gebäude: Kaserne→Infanterie, Fabrik→Panzer, Hafen→Boote, Flugplatz→Flugzeuge. Dafür neue neutrale, einnehmbare POIs (Mine, Kaserne, Hafen, Flugplatz) — füllt zugleich die zu leere Karte; dazu Deko wie Wälder/Felsen als Instanced Meshes (iPad-GPU-Budget beachten).
+> - **Einheiten-Info, zweistufig:** sofort ein **Terminal-Event-Log** (Server meldet: Einheit unter Beschuss, Einheit/Gebäude verloren, Einnahme abgeschlossen, Produktion fertig, Zielfortschritt; Client druckt mit Throttling; dazu `status`-Befehl mit Überblick), später ein kompaktes HUD-Einheiten-Panel.
+> - **FoW-Rendering-Rework:** die separate schwebende Fog-Ebene (`client/src/render/fog.ts`, liegt bei `HEIGHT_SCALE + 0.5`) deckt bei geneigter Kamera nicht die ganze Karte — man schaut am Rand drunter durch (Screenshot 2026-07-17). Fix: die Verdunkelung wandert ins Terrain-Material (Shader-Hook `onBeforeCompile`, dieselbe Fog-DataTexture nach Welt-XZ gesamplet), Wasser-Ebene mitbehandelt. Außerdem klargestellt: **FoW ≠ Radar** — Radar wird ein eigenes Sensorsystem (Kontakte außerhalb der Sichtweite als Minimap-Blips, wie in Abschnitt 4 skizziert) und kommt in Session B.
+> - **Session-Reihenfolge:** **A** = Gameplay-Loop v1 + UX-Fixes (FoW-Rework; Minimap-Klick/Drag zentriert Kamera wie in einem MMO + Kamera-Rechteck + Gebäude-Quadrate auf der Minimap; Gebäude deutlich größer als Einheiten, rein visuell; Event-Log) → **B** = Wirtschaft + POIs + Karte füllen + Radar + Feind-KI nutzt Gebäude/Produktion rudimentär → **C** = Meta (Startscreen mit Kampagnenwahl, Settings, Hilfe-Seite, Tutorial als geführte erste Mission, mehrere Spielstände, Progression/Achievements, HUD-Panel). Meta kommt bewusst zuletzt: erst wenn Loop und Fortschritt existieren, gibt es etwas zu speichern und freizuschalten.
+
 **Phase 4 — Politur & Lasttest**
 - Echter Lasttest: Raspberry Pi 4 + 6 physische iPads gleichzeitig im selben WLAN
 - Asset-Optimierung (Atlas-Größe, Ladezeiten)
@@ -360,7 +367,7 @@ Diese Aufteilung folgt bewusst den Ordnergrenzen, damit zwei Subagenten möglich
 ## Offene Punkte für später
 
 - Genaue Kartengröße (z. B. 512×512 vs. 1024×1024 Kacheln) sollte nach ersten Performance-Tests auf echter Hardware festgelegt werden.
-- Ob Spielstände zwischen Sitzungen gespeichert werden müssen (aktuell angenommen: nein, jedes Match startet frisch) — falls doch, braucht es eine einfache Persistenzschicht (z. B. SQLite auf dem Pi).
+- ~~Ob Spielstände zwischen Sitzungen gespeichert werden müssen~~ → entschieden (2026-07-17): **ja** — mehrere Spielstände, Kampagnen-Fortschritt und Achievements brauchen eine einfache serverseitige Persistenz (z. B. eine JSON-Datei pro Spielstand auf dem Pi). Umsetzung in Session C, siehe Kasten „Gameplay-Loop, Wirtschaft & Meta“ (Abschnitt 9).
 - ~~Konkrete Marine-/Luftfahrt-Asset-Quelle noch zu recherchieren~~ → erledigt, siehe Abschnitt 7: PixVoxel-Pack deckt Marine + Luft ab; Sprites müssen noch extrahiert und in den Loader eingebunden werden.
 - Echter Wasser-Shader: Wasser-Kacheln sind aktuell nur einfarbige Platzhalter-Säulen (siehe `client/src/render/terrain.ts`). Später ein animiertes Wasser-Material (Wellen-Bewegung, Transparenz/Reflexion) wie in Abschnitt 4 als `waterGroup` vorgesehen.
 - Wetter-Partikelsystem (Regen, Schnee, Nebel o. ä.): noch nicht entworfen — Rendering-Ansatz (z. B. `THREE.Points` mit Textur-Atlas) und Performance-Budget für die iPad-GPU müssen noch geklärt werden, bevor das umgesetzt wird.
