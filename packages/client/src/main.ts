@@ -10,6 +10,8 @@ import {
   tiltCamera,
   zoomCamera,
   getGroundAxes,
+  centerCameraOn,
+  getGroundViewportCorners,
 } from './render/camera.js';
 import { createScene } from './render/scene.js';
 import { createTerrainMesh, intersectTerrain, sampleElevation } from './render/terrain.js';
@@ -69,7 +71,7 @@ scene.add(pathLine);
 // Radar-Minimap (KONZEPT Abschnitt 4/Phase 2) lebt ueber Kartenwechsel
 // hinweg; das Fog-of-War-Overlay haengt dagegen an der Kartengroesse und
 // wird bei jedem hello neu erzeugt.
-const minimap = createMinimap(document.body);
+const minimap = createMinimap(document.body, (x, z) => centerCameraOn(cameraRig, x, z));
 let fogOverlay: FogOverlay | null = null;
 
 window.addEventListener('resize', () => {
@@ -195,7 +197,7 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       // Frame - beide arbeiten direkt auf den Snapshot-Positionen.
       latestBuildings = message.buildings;
       fogOverlay?.update(message.entities, message.reconZones ?? [], message.buildings);
-      minimap.update(message.entities);
+      minimap.update(message.entities, message.buildings);
 
       // Zerstoerte Einheiten (nicht mehr im Snapshot) aus der Szene entfernen.
       for (const [id, mesh] of unitMeshes) {
@@ -603,6 +605,10 @@ function render(): void {
 
   if (cameraInput.rotate !== 0) rotateCamera(cameraRig, cameraInput.rotate * CAMERA_ROTATE_SPEED * deltaSeconds);
   if (cameraInput.tilt !== 0) tiltCamera(cameraRig, cameraInput.tilt * CAMERA_TILT_SPEED * deltaSeconds);
+
+  // Kamera-Ausschnitt auf der Minimap nachfuehren - setViewport() zeichnet
+  // nur neu, wenn sich die Kamera tatsaechlich bewegt hat.
+  minimap.setViewport(getGroundViewportCorners(cameraRig));
 
   // Path-Tracker: zeigt die verbleibende Route der ausgewaehlten Einheit
   // (docs/KONZEPT.md Abschnitt 5.3). Wird unten im Entity-Loop befuellt,

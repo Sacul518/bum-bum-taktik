@@ -104,6 +104,41 @@ export function resetCamera(rig: CameraRig, viewSize = DEFAULT_VIEW_SIZE): void 
   updateCameraTransform(rig);
 }
 
+// Zentriert die Kamera auf einen Bodenpunkt (Minimap-Navigation,
+// ui/minimap.ts) - Blickwinkel und Zoom bleiben unveraendert.
+export function centerCameraOn(rig: CameraRig, x: number, z: number): void {
+  rig.target.x = x;
+  rig.target.z = z;
+  updateCameraTransform(rig);
+}
+
+// Projiziert die vier Frustum-Ecken auf die Bodenebene y=0 - das ist der
+// Kartenausschnitt, den die Minimap als Rechteck einzeichnet. Bei der
+// orthografischen Kamera laufen alle Sichtstrahlen parallel zur
+// Blickrichtung; durch die Neigung (tilt) ist der Schnitt mit dem Boden im
+// Allgemeinen ein Parallelogramm, kein achsenparalleles Rechteck.
+const NDC_CORNERS: ReadonlyArray<readonly [number, number]> = [
+  [-1, 1],
+  [1, 1],
+  [1, -1],
+  [-1, -1],
+];
+
+export function getGroundViewportCorners(rig: CameraRig): Array<{ x: number; z: number }> {
+  // matrixWorld selbst aktualisieren: der Renderer tut das erst beim
+  // naechsten render() - direkt nach einer Kamerabewegung waere die
+  // Projektion sonst einen Frame veraltet.
+  rig.camera.updateMatrixWorld();
+  const direction = rig.camera.getWorldDirection(new THREE.Vector3());
+  const origin = new THREE.Vector3();
+  return NDC_CORNERS.map(([nx, ny]) => {
+    origin.set(nx, ny, -1).unproject(rig.camera);
+    // direction.y ist nie 0, weil MIN_TILT bei 8 Grad liegt.
+    const t = -origin.y / direction.y;
+    return { x: origin.x + direction.x * t, z: origin.z + direction.z * t };
+  });
+}
+
 export function panCamera(rig: CameraRig, deltaX: number, deltaZ: number): void {
   rig.target.x += deltaX;
   rig.target.z += deltaZ;

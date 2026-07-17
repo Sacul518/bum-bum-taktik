@@ -1,17 +1,27 @@
-import { TERRAIN_TYPES, type TerrainType, type EntitySnapshot, type Faction } from '@bum-bum-taktik/shared';
+import { TERRAIN_TYPES, type TerrainType, type BuildingFaction, type BuildingSnapshot, type EntitySnapshot, type Faction } from '@bum-bum-taktik/shared';
 import { TERRAIN_COLORS } from '../render/terrain.js';
 
 // Radar-Minimap (docs/KONZEPT.md Abschnitt 4 "Radar: HUD-Blips auf separatem
 // 2D-Overlay" + Abschnitt 9 Phase 2 "Basis-Radar"): eigenes <canvas> im
 // Bildschirmraum, kein Bezug zur 3D-Kamera - dieselbe Idee wie das
 // In-Game-Terminal (terminal/Terminal.ts), nur ohne dessen Fenster-Chrome.
+// Seit PLAN.md Session A Aufgabe 2 auch Navigations-Instrument: Klick/Ziehen
+// zentriert die Kamera (wie in MMOs/LoL), dazu Kamera-Ausschnitt als Rechteck
+// und Gebaeude als Quadrate.
 const SIZE_CSS_PX = 180;
 const BLIP_RADIUS = 2.5;
+const BUILDING_SIZE = 4;
 const GREEN = '#33ff33';
 
 const BLIP_COLOR: Record<Faction, string> = {
   player: GREEN,
   enemy: '#ff4444',
+};
+
+const BUILDING_COLOR: Record<BuildingFaction, string> = {
+  player: GREEN,
+  enemy: '#ff4444',
+  neutral: '#b5b5b5',
 };
 
 // Einmal pro Terrain-Typ vorab in einen CSS-Hex-String umgewandelt (statt bei
@@ -24,13 +34,21 @@ for (const type of TERRAIN_TYPES) {
   TERRAIN_CSS_COLORS[type] = `#${TERRAIN_COLORS[type].getHexString()}`;
 }
 
+type MinimapUnit = Pick<EntitySnapshot, 'x' | 'y' | 'faction'>;
+type MinimapBuilding = Pick<BuildingSnapshot, 'x' | 'y' | 'faction'>;
+
+// Frustum-Ecken auf der Bodenebene, Reihenfolge im Umlaufsinn
+// (render/camera.ts getGroundViewportCorners).
+export type ViewportCorners = ReadonlyArray<{ x: number; z: number }>;
+
 export interface Minimap {
   setTerrain(mapWidth: number, mapHeight: number, terrainTypes: Uint8Array): void;
-  update(units: ReadonlyArray<Pick<EntitySnapshot, 'x' | 'y' | 'faction'>>): void;
+  update(units: ReadonlyArray<MinimapUnit>, buildings?: ReadonlyArray<MinimapBuilding>): void;
+  setViewport(corners: ViewportCorners): void;
   dispose(): void;
 }
 
-export function createMinimap(parent: HTMLElement): Minimap {
+export function createMinimap(parent: HTMLElement, onNavigate?: (worldX: number, worldZ: number) => void): Minimap {
   const dpr = window.devicePixelRatio || 1;
 
   const canvas = document.createElement('canvas');
@@ -47,6 +65,8 @@ export function createMinimap(parent: HTMLElement): Minimap {
     borderRadius: '6px',
     boxShadow: '0 0 12px rgba(51, 255, 51, 0.25)',
     zIndex: '5',
+    // Kein Browser-Scrolling/Zoomen waehrend des Navigations-Drags (Touch).
+    touchAction: 'none',
   } satisfies Partial<CSSStyleDeclaration>);
   parent.appendChild(canvas);
 
@@ -74,11 +94,29 @@ export function createMinimap(parent: HTMLElement): Minimap {
   let hasTerrain = false;
   let currentMapWidth = 0;
   let currentMapHeight = 0;
+  // Letzter Stand fuer Neuzeichnungen zwischen den Server-Ticks - der
+  // Kamera-Ausschnitt (setViewport) aendert sich pro Frame, die Einheiten
+  // nur pro Tick (12 Hz, main.ts).
+  let latestUnits: ReadonlyArray<MinimapUnit> = [];
+  let latestBuildings: ReadonlyArray<MinimapBuilding> = [];
+  let viewportCorners: ViewportCorners = [];
+
+  function toCanvasX(worldX: number): number {
+    return ((worldX + currentMapWidth / 2) / currentMapWidth) * SIZE_CSS_PX;
+  }
+
+  function toCanvasY(worldZ: number): number {
+    return ((worldZ + currentMapHeight / 2) / currentMapHeight) * SIZE_CSS_PX;
+  }
 
   function setTerrain(mapWidth: number, mapHeight: number, terrainTypes: Uint8Array): void {
     currentMapWidth = mapWidth;
     currentMapHeight = mapHeight;
     hasTerrain = true;
+    // Blips/Gebaeude der alten Karte nicht in die neue hineinzeichnen - der
+    // naechste Server-Tick liefert den frischen Stand.
+    latestUnits = [];
+    latestBuildings = [];
 
     const resX = background.width;
     const resY = background.height;
@@ -92,27 +130,95 @@ export function createMinimap(parent: HTMLElement): Minimap {
       }
     }
 
-    render([]);
+    render();
   }
 
-  function render(units: ReadonlyArray<Pick<EntitySnapshot, 'x' | 'y' | 'faction'>>): void {
+  function render(): void {
     ctx.clearRect(0, 0, SIZE_CSS_PX, SIZE_CSS_PX);
     if (!hasTerrain || currentMapWidth === 0 || currentMapHeight === 0) return;
     ctx.drawImage(background, 0, 0, SIZE_CSS_PX, SIZE_CSS_PX);
 
-    for (const unit of units) {
-      const x = ((unit.x + currentMapWidth / 2) / currentMapWidth) * SIZE_CSS_PX;
-      const y = ((unit.y + currentMapHeight / 2) / currentMapHeight) * SIZE_CSS_PX;
+    // Gebaeude zuerst, damit Einheiten-Blips darueber sichtbar bleiben.
+    for (const building of latestBuildings) {
+      ctx.fillStyle = BUILDING_COLOR[building.faction];
+      ctx.fillRect(toCanvasX(building.x) - BUILDING_SIZE / 2, toCanvasY(building.y) - BUILDING_SIZE / 2, BUILDING_SIZE, BUILDING_SIZE);
+    }
+
+    for (const unit of latestUnits) {
       ctx.fillStyle = BLIP_COLOR[unit.faction];
       ctx.beginPath();
-      ctx.arc(x, y, BLIP_RADIUS, 0, Math.PI * 2);
+      ctx.arc(toCanvasX(unit.x), toCanvasY(unit.y), BLIP_RADIUS, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    // Kamera-Ausschnitt als umlaufende Linie; Ecken ausserhalb der Karte
+    // schneidet das Canvas von selbst ab.
+    if (viewportCorners.length >= 3) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      viewportCorners.forEach((corner, index) => {
+        if (index === 0) ctx.moveTo(toCanvasX(corner.x), toCanvasY(corner.z));
+        else ctx.lineTo(toCanvasX(corner.x), toCanvasY(corner.z));
+      });
+      ctx.closePath();
+      ctx.stroke();
+    }
   }
+
+  function update(units: ReadonlyArray<MinimapUnit>, buildings: ReadonlyArray<MinimapBuilding> = []): void {
+    latestUnits = units;
+    latestBuildings = buildings;
+    render();
+  }
+
+  function setViewport(corners: ViewportCorners): void {
+    // Nur neu zeichnen, wenn sich der Ausschnitt wirklich bewegt hat - sonst
+    // wuerde die Minimap bei stehender Kamera in jedem Frame neu gerendert
+    // (Batterie/GPU, laeuft auch auf iPad).
+    const unchanged =
+      corners.length === viewportCorners.length &&
+      corners.every((corner, index) => {
+        const previous = viewportCorners[index];
+        return previous !== undefined && Math.abs(corner.x - previous.x) < 0.01 && Math.abs(corner.z - previous.z) < 0.01;
+      });
+    if (unchanged) return;
+    viewportCorners = corners.map((corner) => ({ x: corner.x, z: corner.z }));
+    render();
+  }
+
+  // Klick und Ziehen zentrieren die Kamera auf die entsprechende Weltposition
+  // (Umkehrung von toCanvasX/Y). Pointer-Capture haelt den Drag auch, wenn
+  // der Zeiger die Minimap dabei verlaesst.
+  let navigating = false;
+
+  function navigateTo(event: PointerEvent): void {
+    if (!onNavigate || !hasTerrain) return;
+    const rect = canvas.getBoundingClientRect();
+    const px = Math.min(Math.max(event.clientX - rect.left, 0), SIZE_CSS_PX);
+    const py = Math.min(Math.max(event.clientY - rect.top, 0), SIZE_CSS_PX);
+    onNavigate((px / SIZE_CSS_PX) * currentMapWidth - currentMapWidth / 2, (py / SIZE_CSS_PX) * currentMapHeight - currentMapHeight / 2);
+  }
+
+  canvas.addEventListener('pointerdown', (event) => {
+    if (!onNavigate) return;
+    event.preventDefault();
+    canvas.setPointerCapture(event.pointerId);
+    navigating = true;
+    navigateTo(event);
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (navigating) navigateTo(event);
+  });
+  const endNavigation = (): void => {
+    navigating = false;
+  };
+  canvas.addEventListener('pointerup', endNavigation);
+  canvas.addEventListener('pointercancel', endNavigation);
 
   function dispose(): void {
     canvas.remove();
   }
 
-  return { setTerrain, update: render, dispose };
+  return { setTerrain, update, setViewport, dispose };
 }

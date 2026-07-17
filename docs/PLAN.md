@@ -27,12 +27,14 @@ Reihenfolge einhalten, jede Aufgabe einzeln verifizieren + committen:
   geteilten Modell-Materialien (`models.ts`), weil der Server alle Gebäude
   schickt — auch die im Nebel, die vorher nur die Ebene mit abdunkelte.
   Wasser/Brücken brauchten nichts Eigenes (Teil des einen Terrain-Meshes).*
-- [ ] **2. Minimap wie MMO** (`client/src/ui/minimap.ts` + `render/camera.ts`):
+- [x] **2. Minimap wie MMO** (`client/src/ui/minimap.ts` + `render/camera.ts`):
   Klick und Ziehen auf der Minimap zentriert die Kamera auf die entsprechende
   Weltposition (wie in League of Legends) — die Kamera braucht dafür ein
   `centerOn(x, z)`. Dazu: den aktuellen Kamera-Ausschnitt als Rechteck auf der
   Minimap zeichnen und Gebäude als kleine Quadrate in Fraktionsfarbe
-  (grau = neutral).
+  (grau = neutral). *Erledigt 2026-07-17: `centerCameraOn` +
+  `getGroundViewportCorners` in camera.ts; der Ausschnitt ist wegen der
+  Kameraneigung ein Parallelogramm, neu gezeichnet wird nur bei Bewegung.*
 - [ ] **3. Größenverhältnisse:** Gebäude sind kaum größer als Einheiten.
   Gebäude-Modelle in `client/src/render/buildings.ts` deutlich vergrößern
   (HQ/Fabrik ca. 2–3 Kacheln Grundfläche, Türme spürbar hoch), Einheiten
