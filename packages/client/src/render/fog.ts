@@ -1,22 +1,68 @@
 import * as THREE from 'three';
 import { BUILDINGS, VISION_RANGE, type BuildingSnapshot, type EntitySnapshot, type ReconZone } from '@bum-bum-taktik/shared';
-import { HEIGHT_SCALE } from './terrain.js';
 
-// Fog of War (docs/KONZEPT.md Abschnitt 9, Phase 2): eine Ebene ueber der
-// ganzen Karte, die ausserhalb der Sichtkreise verdunkelt. Bewusst nur zwei
-// Zustaende (kein "erkundet"-Gedaechtnis) - der Server schickt ohnehin nur
-// Feind-Einheiten, die gerade sichtbar sind (protocol.ts), "unsichtbar"
-// heisst hier also wirklich "koennte gerade alles sein".
+// Fog of War (docs/KONZEPT.md Abschnitt 9, Phase 2): Verdunkelung ausserhalb
+// der Sichtkreise. Bewusst nur zwei Zustaende (kein "erkundet"-Gedaechtnis) -
+// der Server schickt ohnehin nur Feind-Einheiten, die gerade sichtbar sind
+// (protocol.ts), "unsichtbar" heisst hier also wirklich "koennte gerade alles
+// sein".
+//
+// Die Verdunkelung sitzt seit dem FoW-Rework (PLAN.md Session A, Aufgabe 1)
+// direkt in den Materialien von Terrain und Gebaeuden (onBeforeCompile-Hook,
+// s. applyFogDarkening) statt auf einer separaten Ebene ueber der Karte: die
+// Ebene schwebte auf fester Hoehe, bei geneigter Kamera schaute man am
+// Kartenrand drunter durch.
 const DARK_ALPHA = 0.45;
 const DARK_ALPHA_BYTE = Math.round(DARK_ALPHA * 255);
 
-// Knapp ueber der hoechstmoeglichen Kachelhoehe (Elevation bis 1.0 * HEIGHT_SCALE,
-// siehe render/terrain.ts), damit die Ebene garantiert ueber jedem Gelaende
-// jedes Presets liegt.
-const HEIGHT_ABOVE_TERRAIN = 0.5;
+// Uniforms, die sich alle gepatchten Materialien teilen. Bei einem
+// Kartenwechsel tauscht createFogOverlay() nur die Werte aus - die Materialien
+// (v. a. der geteilte Material-Cache in models.ts, der Kartenwechsel
+// ueberlebt) muessen dafuer nicht neu kompiliert werden.
+const fogMapUniform: THREE.IUniform<THREE.Texture | null> = { value: null };
+const fogMapSizeUniform: THREE.IUniform<THREE.Vector2> = { value: new THREE.Vector2(1, 1) };
+// 0 solange keine Karte da ist: der Shader sampelt dann zwar weiter die
+// (ungebundene) Textur, multipliziert das Ergebnis aber mit 0 - so braucht es
+// keine zweite Shader-Variante ohne Fog.
+const fogEnabledUniform: THREE.IUniform<number> = { value: 0 };
+
+// Haengt die Fog-Verdunkelung an ein Material: der Vertex-Shader rechnet die
+// Welt-XZ-Position in Fog-Textur-UVs um, der Fragment-Shader dunkelt die
+// fertige Fragmentfarbe um den Alpha-Wert der Textur ab. Injektionspunkte:
+// <fog_vertex> ist der letzte Chunk im main() aller eingebauten
+// Vertex-Shader (transformed ist dort noch in Scope), <dithering_fragment>
+// der letzte im Fragment-Shader - die Abdunkelung wirkt damit nach Tone-
+// Mapping/Farbraum, genau wie frueher das Blending der Ebene im Framebuffer.
+export function applyFogDarkening(material: THREE.Material): void {
+  if (material.userData.hasFogDarkening) return;
+  material.userData.hasFogDarkening = true;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.fogDarkMap = fogMapUniform;
+    shader.uniforms.fogDarkMapSize = fogMapSizeUniform;
+    shader.uniforms.fogDarkEnabled = fogEnabledUniform;
+    shader.vertexShader =
+      'uniform vec2 fogDarkMapSize;\nvarying vec2 vFogDarkUv;\n' +
+      shader.vertexShader.replace(
+        '#include <fog_vertex>',
+        // Zeile 0 der DataTexture liegt an z = +height/2, die Zeilen laufen
+        // GEGEN die Welt-Z-Richtung - dieselbe Spiegelung, die der
+        // Sichtkreis-Stempel in punchCircle() rechnet (cy-Formel).
+        '#include <fog_vertex>\n' +
+          'vec4 fogDarkWorld = modelMatrix * vec4(transformed, 1.0);\n' +
+          'vFogDarkUv = vec2(fogDarkWorld.x / fogDarkMapSize.x + 0.5, 0.5 - fogDarkWorld.z / fogDarkMapSize.y);',
+      );
+    shader.fragmentShader =
+      'uniform sampler2D fogDarkMap;\nuniform float fogDarkEnabled;\nvarying vec2 vFogDarkUv;\n' +
+      shader.fragmentShader.replace(
+        '#include <dithering_fragment>',
+        'gl_FragColor.rgb *= 1.0 - texture2D(fogDarkMap, vFogDarkUv).a * fogDarkEnabled;\n' +
+          '#include <dithering_fragment>',
+      );
+  };
+  material.needsUpdate = true;
+}
 
 export interface FogOverlay {
-  mesh: THREE.Mesh;
   update(
     units: ReadonlyArray<Pick<EntitySnapshot, 'x' | 'y' | 'unitType' | 'faction'>>,
     reconZones?: ReadonlyArray<ReconZone>,
@@ -26,11 +72,8 @@ export interface FogOverlay {
 }
 
 export function createFogOverlay(mapWidth: number, mapHeight: number): FogOverlay {
-  // Ein Texel pro Kachel, RGBA: R/G/B bleiben immer 0 (schwarz), nur Alpha
-  // traegt die Verdunkelung. MeshBasicMaterial.map multipliziert Farbe UND
-  // Alpha des Diffuse-Colors (map_fragment-Shaderchunk) - ein reiner
-  // Alpha-Kanal (THREE.AlphaFormat) waere in WebGL2 nicht mehr zuverlaessig
-  // unterstuetzt, RGBA ist der robuste Standardweg.
+  // Ein Texel pro Kachel, RGBA: R/G/B bleiben immer 0, nur Alpha traegt die
+  // Verdunkelung - der Shader-Hook liest ausschliesslich den Alpha-Kanal.
   const data = new Uint8Array(mapWidth * mapHeight * 4);
 
   const texture = new THREE.DataTexture(data, mapWidth, mapHeight, THREE.RGBAFormat, THREE.UnsignedByteType);
@@ -42,36 +85,16 @@ export function createFogOverlay(mapWidth: number, mapHeight: number): FogOverla
   texture.wrapS = THREE.ClampToEdgeWrapping;
   texture.wrapT = THREE.ClampToEdgeWrapping;
 
-  // PlaneGeometry deckt exakt denselben Weltbereich ab wie das Terrain-Mesh
-  // (render/terrain.ts: Weltursprung = Kartenmitte, x/z in [-width/2, width/2]
-  // bzw. [-height/2, height/2]). Achtung Zeilenrichtung: DataTexture hat
-  // (anders als Bild-Texturen) flipY = false als Default - zusammen mit der
-  // Rotation unten liegt Zeile 0 des Texturdatenarrays deshalb an
-  // z = +height/2, die Zeilen laufen also GEGEN die Welt-Z-Richtung. Der
-  // Sichtkreis-Stempel in update() rechnet das ein (cy-Formel); ohne diese
-  // Spiegelung landen die Kreise an der Z-gespiegelten Position der Einheit
-  // (im Browser-Test 2026-07-12 genau so beobachtet).
-  const geometry = new THREE.PlaneGeometry(mapWidth, mapHeight);
-  const material = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    depthWrite: false,
-  });
-
-  const mesh = new THREE.Mesh(geometry, material);
-  // Flach auf den Boden legen, wie die Einheiten-Sprites (render/units.ts).
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = HEIGHT_SCALE + HEIGHT_ABOVE_TERRAIN;
-  // Ueber Terrain UND Einheiten (siehe Bericht: Annahme, weil main.ts hier
-  // nicht verdrahtet wird) - Einheiten bleiben trotzdem lesbar, weil sie
-  // erst opak in den Farb-/Tiefenpuffer gezeichnet werden (Terrain-/
-  // Einheiten-Pass) und die Fog-Ebene danach nur transparent darueberblendet.
-  mesh.renderOrder = 10;
+  fogMapUniform.value = texture;
+  fogMapSizeUniform.value.set(mapWidth, mapHeight);
+  fogEnabledUniform.value = 1;
 
   // Stanzt einen aufgehellten Kreis in die Verdunkelung. Erwartet
   // Weltkoordinaten und rechnet sie in den Kachel-Raum um: X wie in
   // sampleElevation() (render/terrain.ts); Y gespiegelt, weil Textur-Zeile 0
-  // an z = +height/2 liegt (siehe Kommentar bei der Geometrie oben).
+  // an z = +height/2 liegt (siehe UV-Rechnung in applyFogDarkening). Ohne
+  // diese Spiegelung landen die Kreise an der Z-gespiegelten Position der
+  // Einheit (im Browser-Test 2026-07-12 genau so beobachtet).
   function punchCircle(worldX: number, worldY: number, radius: number): void {
     const cx = worldX + mapWidth / 2;
     const cy = mapHeight / 2 - worldY;
@@ -125,11 +148,12 @@ export function createFogOverlay(mapWidth: number, mapHeight: number): FogOverla
   }
 
   function dispose(): void {
-    mesh.removeFromParent();
-    geometry.dispose();
-    material.dispose();
+    // Enabled zuerst auf 0, damit kein Material mehr die gleich entsorgte
+    // Textur sichtbar sampelt (Ergebnis wird mit 0 multipliziert).
+    fogEnabledUniform.value = 0;
+    if (fogMapUniform.value === texture) fogMapUniform.value = null;
     texture.dispose();
   }
 
-  return { mesh, update, dispose };
+  return { update, dispose };
 }

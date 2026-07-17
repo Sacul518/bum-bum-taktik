@@ -182,7 +182,6 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       terrainMesh = createTerrainMesh(mapWidth, mapHeight, terrainTypes, terrainElevation);
       scene.add(terrainMesh);
       fogOverlay = createFogOverlay(mapWidth, mapHeight);
-      scene.add(fogOverlay.mesh);
       minimap.setTerrain(mapWidth, mapHeight, terrainTypes);
       return;
     }

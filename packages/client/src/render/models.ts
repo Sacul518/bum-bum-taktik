@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Faction, UnitType } from '@bum-bum-taktik/shared';
+import { applyFogDarkening } from './fog.js';
 
 // Prozedurale Low-Poly-3D-Modelle fuer alle Einheitentypen (Aufgabe
 // "3D-Modelle & Waffen-System"): aus Three.js-Primitiven zusammengesetzt
@@ -42,6 +43,11 @@ export function material(color: number): THREE.MeshLambertMaterial {
   let cached = materialCache.get(color);
   if (!cached) {
     cached = new THREE.MeshLambertMaterial({ color });
+    // Der Server schickt ALLE Gebaeude, auch die im Fog of War - die
+    // Verdunkelung muss deshalb auch auf den Modell-Materialien sitzen
+    // (render/fog.ts). Einheiten trifft das nie sichtbar: die stehen immer
+    // im eigenen Sichtkreis bzw. werden nur geschickt, wenn sichtbar.
+    applyFogDarkening(cached);
     materialCache.set(color, cached);
   }
   return cached;

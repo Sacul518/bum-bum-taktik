@@ -15,7 +15,7 @@ HUD-Panel später.
 
 Reihenfolge einhalten, jede Aufgabe einzeln verifizieren + committen:
 
-- [ ] **1. FoW-Rework (Optik):** Die separate Fog-Ebene in
+- [x] **1. FoW-Rework (Optik):** Die separate Fog-Ebene in
   `client/src/render/fog.ts` schwebt bei `HEIGHT_SCALE + 0.5` über dem Gelände —
   bei geneigter Kamera schaut man am Rand drunter durch, die Karte ist nicht
   voll bedeckt (Screenshot 2026-07-17). Fix: Verdunkelung ins Terrain-Material
@@ -23,6 +23,10 @@ Reihenfolge einhalten, jede Aufgabe einzeln verifizieren + committen:
   Fog-DataTexture nach Welt-XZ sampeln und die Fragmentfarbe abdunkeln),
   Wasser-/Brücken-Flächen mitbehandeln, die alte Ebene entfernen. Sichtkreise
   von Einheiten, Gebäuden und Recon-Sweeps müssen weiter funktionieren.
+  *Erledigt 2026-07-17; Abweichung: der Hook sitzt zusätzlich auf den
+  geteilten Modell-Materialien (`models.ts`), weil der Server alle Gebäude
+  schickt — auch die im Nebel, die vorher nur die Ebene mit abdunkelte.
+  Wasser/Brücken brauchten nichts Eigenes (Teil des einen Terrain-Meshes).*
 - [ ] **2. Minimap wie MMO** (`client/src/ui/minimap.ts` + `render/camera.ts`):
   Klick und Ziehen auf der Minimap zentriert die Kamera auf die entsprechende
   Weltposition (wie in League of Legends) — die Kamera braucht dafür ein

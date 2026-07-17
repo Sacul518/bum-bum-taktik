@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TERRAIN_TYPES, type TerrainType } from '@bum-bum-taktik/shared';
+import { applyFogDarkening } from './fog.js';
 
 // Platzhalter-Farben pro Terrain-Typ (docs/KONZEPT.md Abschnitt 3). Echte
 // Sprite-/Textur-Darstellung folgt spaeter in Phase 1 (Asset-Pipeline).
@@ -127,6 +128,10 @@ export function createTerrainMesh(
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
   const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  // Fog of War dunkelt direkt im Terrain-Shader ab (render/fog.ts) - deckt
+  // damit auch Wasser, Bruecken und die Seitenwaende ab, die alle Teil dieses
+  // einen Meshes sind.
+  applyFogDarkening(material);
   return new THREE.Mesh(geometry, material);
 }
 
