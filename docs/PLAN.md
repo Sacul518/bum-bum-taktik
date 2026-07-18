@@ -69,9 +69,17 @@ Reihenfolge einhalten, jede Aufgabe einzeln verifizieren + committen:
   (Eingestiegene stehen bewusst nicht in Snapshots); dabei Bug gefixt:
   eliminateAll-Fortschritt wurde durch Feind-Nachproduktion negativ, zählt
   jetzt kumulierte Abschüsse (total = Abschüsse + lebende Feinde).*
-- [ ] **6. Falls noch Zeit — Balancing `erstkontakt`:** bekannt zu schwer
+- [x] **6. Falls noch Zeit — Balancing `erstkontakt`:** bekannt zu schwer
   (Spieler verlor 3 von 4 Testläufen) — `WEAPONS`/`MAX_HP` in
   `shared/src/constants.ts` anpassen und mit Testgefechten prüfen.
+  *Erledigt 2026-07-18: Panzer 100→130 HP, Flugzeug 80→100 HP und
+  Reichweite 5→6; Abweichung: zusätzlich Turmschaden 12→7 (Türme stehen nur
+  an der Feindbasis, `eliminateAll` zwingt dorthin). Testgefechte per Bot:
+  Spiel mit Angriffsbefehlen gewinnt 3/3; der reine Marschbefehl in die
+  Feindbasis bleibt tödlich (Türme bestrafen Tatenlosigkeit — gewollt,
+  Auto-Feuer zielt nicht auf Gebäude). Erkenntnis fürs Log: die Schwierigkeit
+  war eine Klippe zwischen Fokus-Feuer und naivem Marsch, keine reine
+  Zahlenfrage.*
 
 ## Session B — Wirtschaft, POIs & Karte
 

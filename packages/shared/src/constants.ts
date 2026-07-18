@@ -18,11 +18,17 @@ export const UNIT_DOMAIN: Record<UnitType, Domain> = {
 };
 
 // Lebenspunkte pro Einheitentyp (docs/KONZEPT.md Abschnitt 9, Phase 2).
+// Balancing 2026-07-18 (PLAN.md Session A, Aufgabe 6): Panzer und Flugzeug
+// angehoben, damit die Anfaenger-Spielweise (Marschbefehl ohne Fokus-Feuer)
+// den gebuendelten Feind-Aggro und das Turmfeuer lange genug uebersteht -
+// im Testgefecht starb der Panzer sonst in ~4s an zwei fokussierenden
+// Feinden. Infanterie bewusst bei 60: sie wird von Fabriken nachproduziert,
+// ein Buff staerkt auch den Feind-Nachschub.
 export const MAX_HP: Record<UnitType, number> = {
-  tank: 100,
+  tank: 130,
   infantry: 60,
   boat: 120,
-  plane: 80,
+  plane: 100,
 };
 
 // Waffensystem (Aufgabe "3D-Modelle & Waffen-System"): jede Einheit hat
@@ -53,7 +59,11 @@ export const WEAPONS: Record<UnitType, WeaponProfile> = {
   // Schiffsgeschuetz: groesste Reichweite, langsamer Nachlademodus.
   boat: { name: 'Schiffsgeschuetz', range: 8, damage: 30, cooldownMs: 2500, targets: ['land', 'water'], projectile: 'shell' },
   // Luft-Boden-Raketen: trifft alles, besonders wirksam gegen Schiffe.
-  plane: { name: 'Raketen', range: 5, damage: 15, cooldownMs: 1500, targets: ['land', 'water', 'air'], bonusVs: { boat: 1.5 }, projectile: 'rocket' },
+  // Reichweite beim Balancing 2026-07-18 von 5 auf 6 angehoben (= Panzer-
+  // kanone): im Testgefecht schwebte das Flugzeug 1-2 Kacheln ausserhalb
+  // seiner Reichweite neben einem Feind-Panzer und starb am Turmfeuer, ohne
+  // dass das Auto-Feuer je ausloeste.
+  plane: { name: 'Raketen', range: 6, damage: 15, cooldownMs: 1500, targets: ['land', 'water', 'air'], bonusVs: { boat: 1.5 }, projectile: 'rocket' },
 };
 
 // Transport (Aufgabe "Infanterie-/Fahrzeug-Interaktion"): nur Infanterie
@@ -109,12 +119,15 @@ export const CAPTURE_RANGE = 3;
 export const CAPTURE_TIME_MS = 8_000;
 
 // Wachturm: einziges Gebaeude mit Waffe, feuert auf die naechste Einheit
-// der Gegenseite (alle Domains - Flak trifft auch Bodenziele). Startwerte
-// fuers Balancing wie bei WEAPONS.
+// der Gegenseite (alle Domains - Flak trifft auch Bodenziele). Schaden beim
+// Balancing 2026-07-18 von 12 auf 7 gesenkt: Tuerme stehen nur an der
+// Feindbasis, und eliminateAll zwingt dorthin (nachproduzierte Infanterie
+// spawnt an der Feind-Fabrik) - mit 2x12 Schaden rissen die beiden Tuerme
+// Infanterie und Flugzeug im Testgefecht in wenigen Sekunden.
 export const TOWER_WEAPON = {
   name: 'Flak',
   range: 7,
-  damage: 12,
+  damage: 7,
   cooldownMs: 1200,
   projectile: 'flak' as ProjectileKind,
 } as const;
