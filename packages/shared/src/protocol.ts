@@ -84,6 +84,11 @@ export interface StateUpdate {
   objectiveProgress?: { done: number; total: number };
   /** Nur gesetzt, wenn in diesem Tick Ereignisse anfielen (GameEvent oben). */
   events?: GameEvent[];
+  /**
+   * Ressourcenstand der Spieler-Fraktion (Wirtschaft, PLAN.md Session B) -
+   * ganzzahlig gerundet. Der Feind-Stand wird bewusst nicht mitgeschickt.
+   */
+  resources: { credits: number; material: number };
 }
 
 // --- Hacking-Minispiel (docs/KONZEPT.md Abschnitt 9, Phase 3) ---

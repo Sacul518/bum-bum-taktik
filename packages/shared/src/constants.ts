@@ -124,6 +124,25 @@ export const BUILDINGS: Record<BuildingType, BuildingProfile> = {
 export const CAPTURE_RANGE = 3;
 export const CAPTURE_TIME_MS = 8_000;
 
+// Wirtschaft (PLAN.md Session B, Hintergrund KONZEPT Abschnitt 9): zwei
+// Ressourcen. Credits kommen aus Staedten (+ kleiner HQ-Grundsold, damit
+// keine Fraktion je komplett trockenliegt), Material NUR aus Minen - wer
+// Fahrzeuge bauen will, muss eine Mine halten. Werte sind Startwerte fuers
+// Balancing.
+export interface ResourceAmount {
+  credits: number;
+  material: number;
+}
+
+export const START_RESOURCES: ResourceAmount = { credits: 150, material: 60 };
+
+/** Laufendes Einkommen pro Sekunde und Gebaeude (nur nicht-neutrale Besitzer). */
+export const BUILDING_INCOME_PER_S: Partial<Record<BuildingType, Partial<ResourceAmount>>> = {
+  hq: { credits: 1 },
+  city: { credits: 2 },
+  mine: { material: 1 },
+};
+
 // Wachturm: einziges Gebaeude mit Waffe, feuert auf die naechste Einheit
 // der Gegenseite (alle Domains - Flak trifft auch Bodenziele). Schaden beim
 // Balancing 2026-07-18 von 12 auf 7 gesenkt: Tuerme stehen nur an der

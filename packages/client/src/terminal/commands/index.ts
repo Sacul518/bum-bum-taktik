@@ -10,6 +10,7 @@ import './map.js';
 import './missions.js';
 import './objective.js';
 import './recon.js';
+import './resources.js';
 import './select.js';
 import './status.js';
 import './transport.js';

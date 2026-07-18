@@ -21,6 +21,7 @@ import { createPathLine, updatePathLine } from './render/path.js';
 import { spawnTracer, updateTracers } from './render/tracers.js';
 import { createFogOverlay, type FogOverlay } from './render/fog.js';
 import { createMinimap } from './ui/minimap.js';
+import { createResourceHud } from './ui/resources.js';
 import { connectToServer } from './net/client.js';
 import { resolveCameraInput } from './input/hotkeys.js';
 import { createTerminal } from './terminal/Terminal.js';
@@ -33,6 +34,7 @@ import {
   setCurrentPreset,
   setActiveMission,
   setObjectiveProgress,
+  setResources,
   setWonMissions,
 } from './terminal/gameBridge.js';
 import { formatMissionList } from './terminal/commands/missions.js';
@@ -106,6 +108,7 @@ function printGameEvent(event: GameEvent): void {
 // hinweg; das Fog-of-War-Overlay haengt dagegen an der Kartengroesse und
 // wird bei jedem hello neu erzeugt.
 const minimap = createMinimap(document.body, (x, z) => centerCameraOn(cameraRig, x, z));
+const resourceHud = createResourceHud(document.body);
 let fogOverlay: FogOverlay | null = null;
 
 window.addEventListener('resize', () => {
@@ -235,6 +238,8 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       // Frame - beide arbeiten direkt auf den Snapshot-Positionen.
       latestBuildings = message.buildings;
       setObjectiveProgress(message.objectiveProgress ?? null);
+      setResources(message.resources);
+      resourceHud.update(message.resources);
       for (const event of message.events ?? []) printGameEvent(event);
       fogOverlay?.update(message.entities, message.reconZones ?? [], message.buildings);
       minimap.update(message.entities, message.buildings);

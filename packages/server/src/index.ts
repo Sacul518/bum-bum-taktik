@@ -25,6 +25,7 @@ import {
 } from '@bum-bum-taktik/shared';
 import { advanceUnits, getUnits, initUnits, orderDisembark, orderEmbark, setAttackTarget, setUnitTargets, spawnProducedUnit } from './gameLoop.js';
 import { buildingSnapshots, getBuildings, initBuildings, updateBuildings } from './buildings.js';
+import { getResources, initEconomy, updateEconomy } from './economy.js';
 import { filterVisibleEntities } from './visibility.js';
 import { abortHack, attemptHack, clearAllHacks, expireTimedOutHacks, startHack } from './hacking.js';
 import { activeReconZones, clearReconZones, requestRecon } from './recon.js';
@@ -100,6 +101,7 @@ function switchMap(presetId: MapPresetId, setup?: MissionUnitSetup[]): void {
   underFireAt.clear();
   initUnits(walkability, setup);
   initBuildings(walkability);
+  initEconomy();
   missionStats = {
     hadPlayerHq: getBuildings().some((building) => building.id === 'hq-player'),
     hadEnemyHq: getBuildings().some((building) => building.id === 'hq-enemy'),
@@ -274,6 +276,7 @@ setInterval(() => {
   // (Turm-Opfer werden von removeDeadUnits entfernt, neue Infanterie taucht
   // sofort in den entities auf).
   const towerShots = updateBuildings(getUnits(), spawnProducedUnit);
+  updateEconomy(getBuildings(), TICK_INTERVAL_MS);
   const { entities, shots: unitShots } = advanceUnits();
   const shots = [...unitShots, ...towerShots];
 
@@ -396,6 +399,7 @@ setInterval(() => {
     shots,
     visibleEnemyIds,
     buildings,
+    resources: getResources('player'),
     ...(reconZones.length > 0 ? { reconZones } : {}),
     ...(progress ? { objectiveProgress: progress } : {}),
     ...(events.length > 0 ? { events } : {}),

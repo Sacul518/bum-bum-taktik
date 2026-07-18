@@ -7,6 +7,7 @@ import type {
   HackResultMessage,
   MapPresetId,
   ReconResultMessage,
+  ResourceAmount,
 } from '@bum-bum-taktik/shared';
 
 // Bruecke zwischen Terminal-Befehlen und dem Spiel in main.ts: die Befehle
@@ -64,6 +65,18 @@ export function setObjectiveProgress(progress: { done: number; total: number } |
 
 export function getObjectiveProgress(): { done: number; total: number } | null {
   return objectiveProgress;
+}
+
+// Ressourcenstand (Wirtschaft, PLAN.md Session B): kommt pro Tick im
+// StateUpdate - main.ts liefert zu, der resources-Terminalbefehl liest hier.
+let resources: ResourceAmount | null = null;
+
+export function setResources(amount: ResourceAmount): void {
+  resources = amount;
+}
+
+export function getResources(): ResourceAmount | null {
+  return resources;
 }
 
 /** false, wenn noch keine Verbindung hinterlegt ist - Befehle melden das als Fehler. */
