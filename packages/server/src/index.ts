@@ -24,7 +24,7 @@ import {
   type WalkabilityGrids,
 } from '@bum-bum-taktik/shared';
 import { advanceUnits, getUnits, initUnits, orderDisembark, orderEmbark, setAttackTarget, setUnitTargets, spawnProducedUnit } from './gameLoop.js';
-import { buildingSnapshots, getBuildings, initBuildings, updateBuildings } from './buildings.js';
+import { buildingSnapshots, getBuildings, initBuildings, startProduction, updateBuildings } from './buildings.js';
 import { getResources, initEconomy, updateEconomy } from './economy.js';
 import { filterVisibleEntities } from './visibility.js';
 import { abortHack, attemptHack, clearAllHacks, expireTimedOutHacks, startHack } from './hacking.js';
@@ -226,6 +226,14 @@ wss.on('connection', (socket) => {
       } else if (command.type === 'hackAbort') {
         const result = abortHack(String(command.hackId), playerId);
         if (result) socket.send(encodeServerMessage(result));
+      } else if (command.type === 'produce') {
+        // Antwort (Zusage oder Ablehnungsgrund) geht nur an den Anforderer -
+        // unicast wie bei recon/hack, siehe protocol.ts.
+        socket.send(
+          encodeServerMessage(
+            startProduction('player', String(command.unitType), command.buildingId === undefined ? undefined : String(command.buildingId)),
+          ),
+        );
       } else if (command.type === 'embark') {
         orderEmbark(command.unitIds.map(String), String(command.transportId));
       } else if (command.type === 'disembark') {

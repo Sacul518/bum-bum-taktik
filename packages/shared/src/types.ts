@@ -39,6 +39,8 @@ export interface BuildingSnapshot {
   captureProgress?: number;
   /** Fraktion, die gerade einnimmt - nur zusammen mit captureProgress gesetzt. */
   captureBy?: Faction;
+  /** Laufende Produktion (PLAN.md Session B) - progress 0..1, nur solange gebaut wird. */
+  production?: { unitType: UnitType; progress: number };
 }
 
 export interface EntitySnapshot {

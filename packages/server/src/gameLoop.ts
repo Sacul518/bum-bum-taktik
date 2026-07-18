@@ -297,18 +297,21 @@ export function setAttackTarget(unitId: string, targetId: string): void {
 }
 
 /**
- * Fabrik-Produktion (buildings.ts): spawnt eine Infanterie-Einheit auf der
- * naechsten freien Landkachel neben der Fabrik. false, wenn gerade keine
- * begehbare Kachel in der Naehe ist - die Fabrik versucht es dann im
- * naechsten Tick erneut (ihr Cooldown bleibt abgelaufen).
+ * Produktion (buildings.ts): spawnt die fertige Einheit auf der naechsten
+ * fuer ihre Domain begehbaren Kachel neben dem Gebaeude - beim Hafen ist das
+ * die Wasserkachel nebenan, beim Flugplatz die eigene Kachel (Luft ist ueberall
+ * frei). false, wenn gerade keine passende Kachel in der Naehe ist - das
+ * Gebaeude versucht es dann im naechsten Tick erneut.
  */
-export function spawnProducedUnit(faction: Faction, near: GridPoint): boolean {
+export function spawnProducedUnit(faction: Faction, unitType: UnitType, near: GridPoint): boolean {
   if (!activeGrids) return false;
-  const tile = nearestWalkableTile(activeGrids, 'land', near, 4);
+  // minRadius 1: nicht auf der Gebaeudekachel selbst spawnen - die Modelle
+  // sind mehrere Kacheln gross, die Einheit stuende sonst mitten im Gebaeude.
+  const tile = nearestWalkableTile(activeGrids, UNIT_DOMAIN[unitType], near, 4, 1);
   if (!tile) return false;
   producedCounter += 1;
-  const id = faction === 'enemy' ? `enemy-infantry-p${producedCounter}` : `infantry-p${producedCounter}`;
-  units.push(createUnit(id, 'infantry', faction, tile, activeGrids));
+  const id = faction === 'enemy' ? `enemy-${unitType}-p${producedCounter}` : `${unitType}-p${producedCounter}`;
+  units.push(createUnit(id, unitType, faction, tile, activeGrids));
   return true;
 }
 
@@ -318,8 +321,8 @@ export function spawnProducedUnit(faction: Faction, near: GridPoint): boolean {
 // findSpawnTile, aber klein und ohne occupied-Logik). Noetig, weil die
 // Kachel eines Boots (Wasser) fuer Infanterie (Land) nie begehbar ist -
 // als Anlauf-/Absetzziel dient die naechstgelegene Landkachel daneben.
-function nearestWalkableTile(grids: WalkabilityGrids, domain: Domain, center: GridPoint, maxRadius: number): GridPoint | null {
-  for (let radius = 0; radius <= maxRadius; radius++) {
+function nearestWalkableTile(grids: WalkabilityGrids, domain: Domain, center: GridPoint, maxRadius: number, minRadius = 0): GridPoint | null {
+  for (let radius = minRadius; radius <= maxRadius; radius++) {
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;

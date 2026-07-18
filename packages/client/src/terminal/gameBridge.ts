@@ -6,6 +6,7 @@ import type {
   HackChallengeMessage,
   HackResultMessage,
   MapPresetId,
+  ProduceResultMessage,
   ReconResultMessage,
   ResourceAmount,
 } from '@bum-bum-taktik/shared';
@@ -139,4 +140,16 @@ export function onReconResult(handler: (message: ReconResultMessage) => void): v
 
 export function deliverReconResult(message: ReconResultMessage): void {
   reconResultHandler?.(message);
+}
+
+// Produktion (PLAN.md Session B): produceResult ist die direkte Server-
+// Antwort an den Anforderer - gleiche Bruecke wie bei recon.
+let produceResultHandler: ((message: ProduceResultMessage) => void) | null = null;
+
+export function onProduceResult(handler: (message: ProduceResultMessage) => void): void {
+  produceResultHandler = handler;
+}
+
+export function deliverProduceResult(message: ProduceResultMessage): void {
+  produceResultHandler?.(message);
 }

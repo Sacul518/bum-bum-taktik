@@ -21,10 +21,14 @@ registerCommand('buildings', 'Tabelle aller Gebaeude (Fraktion/HP/Position/Einna
     const capture = building.captureProgress
       ? `  Einnahme ${Math.round(building.captureProgress * 100)}% (${building.captureBy})`
       : '';
-    lines.push(`${building.id.padEnd(idWidth + 2)}${building.faction.padEnd(factionWidth + 2)}${hp.padEnd(9)}${pos}${capture}`);
+    const production = building.production
+      ? `  baut ${building.production.unitType} (${Math.round(building.production.progress * 100)}%)`
+      : '';
+    lines.push(`${building.id.padEnd(idWidth + 2)}${building.faction.padEnd(factionWidth + 2)}${hp.padEnd(9)}${pos}${capture}${production}`);
   }
   lines.push('');
-  lines.push('Klick auf ein feindliches/neutrales Gebaeude = Angriff. Infanterie daneben nimmt Fabriken/Staedte ein.');
+  lines.push('Klick auf ein feindliches/neutrales Gebaeude = Angriff. Infanterie daneben nimmt einnehmbare Gebaeude ein.');
+  lines.push('"produce <einheit>" baut Einheiten an eigenen Produktionsgebaeuden (Kostentabelle: "produce").');
 
   return lines.join('\n');
 });

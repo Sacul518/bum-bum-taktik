@@ -2,30 +2,35 @@ import {
   BUILDINGS,
   CAPTURE_RANGE,
   CAPTURE_TIME_MS,
-  FACTORY_PRODUCE_CAP,
-  FACTORY_PRODUCE_INTERVAL_MS,
+  PRODUCTION_BUILDING,
+  PRODUCTION_TIME_MS,
   TICK_INTERVAL_MS,
   TOWER_WEAPON,
+  UNIT_COST,
   isWalkable,
   type BuildingFaction,
   type BuildingSnapshot,
   type BuildingType,
   type Faction,
   type GridPoint,
+  type ProduceResultMessage,
   type ShotEvent,
+  type UnitType,
   type WalkabilityGrids,
 } from '@bum-bum-taktik/shared';
 import type { UnitState } from './gameLoop.js';
+import { trySpend } from './economy.js';
 
 // Gebaeude & Basen (Aufgabe 5): statische Gebaeude auf Landkacheln, pro
 // Kartenwechsel neu platziert (initBuildings). Vier Rollen:
 //  - zerstoerbar: Einheiten koennen Gebaeude explizit angreifen (gameLoop.ts
 //    behandelt attackTargetId auch als Gebaeude-ID)
-//  - einnehmbar: Infanterie in CAPTURE_RANGE nimmt Fabriken/Staedte ein
+//  - einnehmbar: Infanterie in CAPTURE_RANGE nimmt Fabriken/Staedte/POIs ein
 //  - Sicht: Spieler-Gebaeude sind Fog-of-War-Sichtquellen (visibility.ts)
-//  - Produktion: Fabriken spawnen Infanterie ihrer Fraktion (ueber den
-//    spawnInfantry-Callback, verdrahtet in index.ts - kein Runtime-Import
-//    von gameLoop.ts, damit kein Import-Zyklus entsteht)
+//  - Produktion (PLAN.md Session B): bestellte Einheiten entstehen am
+//    passenden Gebaeude (PRODUCTION_BUILDING) gegen Ressourcen (economy.ts);
+//    der Spawn laeuft ueber den spawnUnit-Callback, verdrahtet in index.ts -
+//    kein Runtime-Import von gameLoop.ts, damit kein Import-Zyklus entsteht
 
 export interface BuildingState {
   id: string;
@@ -40,9 +45,8 @@ export interface BuildingState {
   /** Fraktion, die gerade einnimmt (null = keine laufende Einnahme). */
   captureBy: Faction | null;
   captureProgressMs: number;
-  /** Fabrik: bisher produzierte Einheiten (Cap FACTORY_PRODUCE_CAP). */
-  produced: number;
-  produceCooldownMs: number;
+  /** Laufende Produktion (eine Einheit gleichzeitig) oder null. */
+  production: { unitType: UnitType; remainingMs: number } | null;
 }
 
 let buildings: BuildingState[] = [];
@@ -98,8 +102,7 @@ function createBuilding(id: string, buildingType: BuildingType, faction: Buildin
     cooldownMs: 0,
     captureBy: null,
     captureProgressMs: 0,
-    produced: 0,
-    produceCooldownMs: FACTORY_PRODUCE_INTERVAL_MS,
+    production: null,
   };
 }
 
@@ -226,9 +229,9 @@ function updateCapture(building: BuildingState, units: UnitState[]): void {
       building.faction = faction;
       building.captureBy = null;
       building.captureProgressMs = 0;
-      // Eine eroberte Fabrik produziert fuer den neuen Besitzer von vorn.
-      building.produced = 0;
-      building.produceCooldownMs = FACTORY_PRODUCE_INTERVAL_MS;
+      // Eine laufende Produktion des alten Besitzers verfaellt mitsamt der
+      // bereits bezahlten Ressourcen - Einnehmen ist auch Sabotage.
+      building.production = null;
     }
   } else if (present.size === 0 && building.captureBy) {
     building.captureProgressMs -= TICK_INTERVAL_MS;
@@ -274,11 +277,47 @@ function fireTower(building: BuildingState, units: UnitState[]): ShotEvent | nul
 }
 
 /**
- * Ein Gebaeude-Tick: zerstoerte Gebaeude entfernen (und Angriffsbefehle
- * darauf loeschen), Einnahmen fortschreiben, Fabriken produzieren lassen,
- * Wachtuerme feuern lassen. Gibt die Turm-Schuesse fuer die Tracer zurueck.
+ * Bestellt eine Einheit (produce-Befehl bzw. Feind-KI): sucht das Gebaeude,
+ * prueft Belegung und Kosten (economy.ts) und startet den Bau. Die Antwort
+ * ist direkt die produceResult-Nachricht fuer den Anforderer.
  */
-export function updateBuildings(units: UnitState[], spawnInfantry: (faction: Faction, near: GridPoint) => boolean): ShotEvent[] {
+export function startProduction(faction: Faction, unitTypeRaw: string, buildingId?: string): ProduceResultMessage {
+  const reject = (reason: ProduceResultMessage['reason']): ProduceResultMessage => ({
+    type: 'produceResult',
+    accepted: false,
+    unitType: unitTypeRaw,
+    ...(reason ? { reason } : {}),
+  });
+
+  // unitType kommt als JSON von aussen - zur Laufzeit pruefen.
+  if (!(unitTypeRaw in UNIT_COST)) return reject('unknownUnit');
+  const unitType = unitTypeRaw as UnitType;
+  const requiredType = PRODUCTION_BUILDING[unitType];
+
+  let building: BuildingState | undefined;
+  if (buildingId) {
+    building = buildings.find((b) => b.id === buildingId && b.faction === faction && b.buildingType === requiredType);
+    if (!building) return reject('noBuilding');
+    if (building.production) return reject('busy');
+  } else {
+    const candidates = buildings.filter((b) => b.faction === faction && b.buildingType === requiredType);
+    if (candidates.length === 0) return reject('noBuilding');
+    building = candidates.find((b) => !b.production);
+    if (!building) return reject('busy');
+  }
+
+  if (!trySpend(faction, UNIT_COST[unitType])) return reject('cost');
+  building.production = { unitType, remainingMs: PRODUCTION_TIME_MS[unitType] };
+  return { type: 'produceResult', accepted: true, unitType, buildingId: building.id };
+}
+
+/**
+ * Ein Gebaeude-Tick: zerstoerte Gebaeude entfernen (und Angriffsbefehle
+ * darauf loeschen), Einnahmen fortschreiben, laufende Produktionen
+ * fortschreiben und fertige Einheiten spawnen, Wachtuerme feuern lassen.
+ * Gibt die Turm-Schuesse fuer die Tracer zurueck.
+ */
+export function updateBuildings(units: UnitState[], spawnUnit: (faction: Faction, unitType: UnitType, near: GridPoint) => boolean): ShotEvent[] {
   const destroyed = new Set(buildings.filter((building) => building.hp <= 0).map((building) => building.id));
   if (destroyed.size > 0) {
     buildings = buildings.filter((building) => !destroyed.has(building.id));
@@ -295,11 +334,12 @@ export function updateBuildings(units: UnitState[], spawnInfantry: (faction: Fac
   for (const building of buildings) {
     updateCapture(building, units);
 
-    if (building.buildingType === 'factory' && building.faction !== 'neutral' && building.produced < FACTORY_PRODUCE_CAP) {
-      building.produceCooldownMs -= TICK_INTERVAL_MS;
-      if (building.produceCooldownMs <= 0 && spawnInfantry(building.faction, building.tile)) {
-        building.produced += 1;
-        building.produceCooldownMs = FACTORY_PRODUCE_INTERVAL_MS;
+    if (building.production && building.faction !== 'neutral') {
+      building.production.remainingMs -= TICK_INTERVAL_MS;
+      // Spawn kann scheitern (keine freie Kachel) - dann bleibt die fertige
+      // Produktion stehen und versucht es im naechsten Tick erneut.
+      if (building.production.remainingMs <= 0 && spawnUnit(building.faction, building.production.unitType, building.tile)) {
+        building.production = null;
       }
     }
 
@@ -321,6 +361,14 @@ export function buildingSnapshots(): BuildingSnapshot[] {
     hp: building.hp,
     ...(building.captureBy
       ? { captureProgress: building.captureProgressMs / CAPTURE_TIME_MS, captureBy: building.captureBy }
+      : {}),
+    ...(building.production
+      ? {
+          production: {
+            unitType: building.production.unitType,
+            progress: 1 - building.production.remainingMs / PRODUCTION_TIME_MS[building.production.unitType],
+          },
+        }
       : {}),
   }));
 }

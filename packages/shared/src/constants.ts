@@ -157,11 +157,31 @@ export const TOWER_WEAPON = {
   projectile: 'flak' as ProjectileKind,
 } as const;
 
-// Fabrik-Produktion: alle FACTORY_PRODUCE_INTERVAL_MS eine Infanterie-
-// Einheit neben der Fabrik, gedeckelt auf FACTORY_PRODUCE_CAP pro Fabrik
-// und Karte (sonst wuerde eine vergessene Feind-Fabrik die Karte fluten).
-export const FACTORY_PRODUCE_INTERVAL_MS = 30_000;
-export const FACTORY_PRODUCE_CAP = 5;
+// Produktion (PLAN.md Session B): Einheiten kosten Ressourcen und entstehen
+// am passenden Gebaeude - ersetzt die fruehere Gratis-Infanterie der
+// Fabriken. Ein Gebaeude baut immer genau eine Einheit gleichzeitig.
+export const PRODUCTION_BUILDING: Record<UnitType, BuildingType> = {
+  infantry: 'barracks',
+  tank: 'factory',
+  boat: 'harbor',
+  plane: 'airfield',
+};
+
+// Infanterie kostet bewusst kein Material: sie bleibt auch ohne Mine
+// produzierbar (nur Kaserne + Credits noetig), Fahrzeuge nicht.
+export const UNIT_COST: Record<UnitType, ResourceAmount> = {
+  infantry: { credits: 30, material: 0 },
+  tank: { credits: 80, material: 40 },
+  boat: { credits: 70, material: 30 },
+  plane: { credits: 100, material: 50 },
+};
+
+export const PRODUCTION_TIME_MS: Record<UnitType, number> = {
+  infantry: 8_000,
+  tank: 15_000,
+  boat: 15_000,
+  plane: 20_000,
+};
 
 // Sichtweite in Kacheln pro Einheitentyp - Grundlage fuer Fog of War
 // (docs/KONZEPT.md Abschnitt 9, Phase 2): der Server schickt Feind-Einheiten

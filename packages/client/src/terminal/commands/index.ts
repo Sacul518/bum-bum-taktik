@@ -9,6 +9,7 @@ import './hack.js';
 import './map.js';
 import './missions.js';
 import './objective.js';
+import './produce.js';
 import './recon.js';
 import './resources.js';
 import './select.js';

@@ -29,6 +29,7 @@ import {
   bindGameCommands,
   bindSelection,
   deliverHackMessage,
+  deliverProduceResult,
   deliverReconResult,
   getCurrentPreset,
   setCurrentPreset,
@@ -302,6 +303,12 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
     // Antwort auf den recon-Terminalbefehl - gleiche Bruecke wie beim Hacking.
     if (message.type === 'reconResult') {
       deliverReconResult(message);
+      return;
+    }
+
+    // Antwort auf den produce-Terminalbefehl (PLAN.md Session B).
+    if (message.type === 'produceResult') {
+      deliverProduceResult(message);
       return;
     }
 

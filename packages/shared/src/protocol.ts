@@ -146,7 +146,8 @@ export type ServerMessage =
   | HackChallengeMessage
   | HackResultMessage
   | MissionEndMessage
-  | ReconResultMessage;
+  | ReconResultMessage
+  | ProduceResultMessage;
 
 // ServerHello enthaelt ein ArrayBuffer (Terrain-Raster), das JSON.stringify
 // nicht abbilden kann (wird sonst stillschweigend zu "{}"). Deshalb hier
@@ -260,6 +261,33 @@ export interface ReconResultMessage {
   remainingCooldownMs: number;
 }
 
+// Produktion (PLAN.md Session B): der produce-Terminalbefehl bestellt eine
+// Einheit; der Server prueft Gebaeude, Belegung und Kosten und antwortet nur
+// dem Anforderer (unicast, gleiche Bruecken-Idee wie reconResult). Der
+// laufende Bau selbst steht fuer alle in BuildingSnapshot.production.
+export interface ProduceCommand {
+  type: 'produce';
+  /** Kommt als JSON von aussen - der Server prueft zur Laufzeit gegen UNIT_COST. */
+  unitType: string;
+  /** Ohne Angabe waehlt der Server das erste freie passende eigene Gebaeude. */
+  buildingId?: string;
+}
+
+export type ProduceFailReason =
+  | 'unknownUnit' // unitType ist kein bekannter Einheitentyp
+  | 'noBuilding' // kein eigenes (freies) Gebaeude des passenden Typs
+  | 'busy' // das angegebene Gebaeude baut schon
+  | 'cost'; // Ressourcen reichen nicht
+
+export interface ProduceResultMessage {
+  type: 'produceResult';
+  accepted: boolean;
+  unitType: string;
+  /** Bei Erfolg: das Gebaeude, das jetzt baut. */
+  buildingId?: string;
+  reason?: ProduceFailReason;
+}
+
 // Transport (docs/KONZEPT.md Abschnitt 9): Infanterie laeuft zum eigenen
 // Transporter und steigt ein, sobald sie nah genug ist (EMBARK_RANGE);
 // disembark setzt alle Passagiere auf begehbare Nachbarkacheln ab. Beide
@@ -286,4 +314,5 @@ export type ClientCommand =
   | HackAbortCommand
   | ReconCommand
   | EmbarkCommand
-  | DisembarkCommand;
+  | DisembarkCommand
+  | ProduceCommand;
