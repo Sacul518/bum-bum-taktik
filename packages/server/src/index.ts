@@ -26,7 +26,7 @@ import {
 import { advanceUnits, getUnits, initUnits, orderDisembark, orderEmbark, setAttackTarget, setUnitTargets, spawnProducedUnit } from './gameLoop.js';
 import { buildingSnapshots, getBuildings, initBuildings, startProduction, updateBuildings } from './buildings.js';
 import { getResources, initEconomy, updateEconomy } from './economy.js';
-import { filterVisibleEntities } from './visibility.js';
+import { computeRadarContacts, filterVisibleEntities } from './visibility.js';
 import { abortHack, attemptHack, clearAllHacks, expireTimedOutHacks, startHack } from './hacking.js';
 import { activeReconZones, clearReconZones, requestRecon } from './recon.js';
 
@@ -400,6 +400,9 @@ setInterval(() => {
   const reconZones = activeReconZones();
   const buildings = buildingSnapshots();
   const { entities: visibleEntities, visibleEnemyIds } = filterVisibleEntities(entities, shots, reconZones, buildings);
+  // Radar arbeitet auf der UNGEFILTERTEN Entity-Liste: es meldet gerade die
+  // Feinde, die NICHT im entities-Snapshot stehen.
+  const radarContacts = computeRadarContacts(entities, visibleEnemyIds, buildings);
   const state: StateUpdate = {
     type: 'state',
     tick,
@@ -408,6 +411,7 @@ setInterval(() => {
     visibleEnemyIds,
     buildings,
     resources: getResources('player'),
+    ...(radarContacts.length > 0 ? { radarContacts } : {}),
     ...(reconZones.length > 0 ? { reconZones } : {}),
     ...(progress ? { objectiveProgress: progress } : {}),
     ...(events.length > 0 ? { events } : {}),

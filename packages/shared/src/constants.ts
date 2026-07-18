@@ -183,6 +183,16 @@ export const PRODUCTION_TIME_MS: Record<UnitType, number> = {
   plane: 20_000,
 };
 
+// Radar (PLAN.md Session B, KONZEPT Abschnitt 4): eigenes Sensorsystem,
+// GETRENNT vom Fog of War. Gebaeude mit Radar melden Feind-Kontakte in
+// diesem Radius als anonyme Blips auf der Minimap - ohne Typ, ohne
+// 3D-Darstellung, ohne FoW-Aufhellung. Das HQ hat das grosse Radar, der
+// (einnehmbare) Flugplatz ein kleines - ein Grund mehr, ihn zu holen.
+export const RADAR_RANGE: Partial<Record<BuildingType, number>> = {
+  hq: 40,
+  airfield: 30,
+};
+
 // Sichtweite in Kacheln pro Einheitentyp - Grundlage fuer Fog of War
 // (docs/KONZEPT.md Abschnitt 9, Phase 2): der Server schickt Feind-Einheiten
 // nur, wenn mindestens eine Spieler-Einheit sie in Sichtweite hat. Der

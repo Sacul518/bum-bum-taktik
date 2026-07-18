@@ -262,7 +262,7 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       resourceHud.update(message.resources);
       for (const event of message.events ?? []) printGameEvent(event);
       fogOverlay?.update(message.entities, message.reconZones ?? [], message.buildings);
-      minimap.update(message.entities, message.buildings);
+      minimap.update(message.entities, message.buildings, message.radarContacts ?? []);
 
       // Zerstoerte Einheiten (nicht mehr im Snapshot) aus der Szene entfernen.
       for (const [id, mesh] of unitMeshes) {

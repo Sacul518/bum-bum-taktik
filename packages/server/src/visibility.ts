@@ -1,4 +1,4 @@
-import { BUILDINGS, VISION_RANGE, type BuildingSnapshot, type EntityId, type EntitySnapshot, type ReconZone, type ShotEvent } from '@bum-bum-taktik/shared';
+import { BUILDINGS, RADAR_RANGE, VISION_RANGE, type BuildingSnapshot, type EntityId, type EntitySnapshot, type ReconZone, type ShotEvent } from '@bum-bum-taktik/shared';
 
 // Fog of War (docs/KONZEPT.md Abschnitt 9, Phase 2): Koop = geteilte Sicht,
 // darum EIN gefiltertes Paket fuer alle Clients statt pro Spieler eigene
@@ -33,4 +33,29 @@ export function filterVisibleEntities(
     entities: [...players, ...visibleEnemies],
     visibleEnemyIds: visibleEnemies.map((enemy) => enemy.id),
   };
+}
+
+// Radar (PLAN.md Session B): eigenes Sensorsystem NEBEN dem Fog of War.
+// Feinde, die keine Spieler-Einheit sieht, aber die im Radarradius eines
+// Spieler-Gebaeudes (RADAR_RANGE) liegen, werden als anonyme, ganzzahlig
+// gerundete Positionen gemeldet - genug fuer einen Minimap-Blip, aber
+// weder Typ noch ID noch 3D-Darstellung.
+export function computeRadarContacts(
+  entities: EntitySnapshot[],
+  visibleEnemyIds: ReadonlyArray<EntityId>,
+  buildings: Pick<BuildingSnapshot, 'buildingType' | 'faction' | 'x' | 'y'>[],
+): { x: number; y: number }[] {
+  const radarSources = buildings.filter((building) => building.faction === 'player' && RADAR_RANGE[building.buildingType] !== undefined);
+  if (radarSources.length === 0) return [];
+
+  const visible = new Set(visibleEnemyIds);
+  const contacts: { x: number; y: number }[] = [];
+  for (const entity of entities) {
+    if (entity.faction !== 'enemy' || visible.has(entity.id)) continue;
+    const detected = radarSources.some(
+      (source) => Math.hypot(entity.x - source.x, entity.y - source.y) <= (RADAR_RANGE[source.buildingType] as number),
+    );
+    if (detected) contacts.push({ x: Math.round(entity.x), y: Math.round(entity.y) });
+  }
+  return contacts;
 }

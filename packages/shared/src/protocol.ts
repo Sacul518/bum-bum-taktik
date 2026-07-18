@@ -76,6 +76,13 @@ export interface StateUpdate {
   /** Nur gesetzt, solange mindestens ein Aufklaerungs-Sweep aktiv ist. */
   reconZones?: ReconZone[];
   /**
+   * Radar-Kontakte (PLAN.md Session B): Feinde ausserhalb der Sichtweite,
+   * aber im Radarradius eines Spieler-Gebaeudes (RADAR_RANGE) - anonyme
+   * Positionen (ganzzahlig gerundet) fuer die Minimap-Blips. Nur gesetzt,
+   * wenn es gerade Kontakte gibt. FoW bleibt davon unberuehrt.
+   */
+  radarContacts?: { x: number; y: number }[];
+  /**
    * Missionsziel-Fortschritt, nur bei aktiver Mission (server/index.ts).
    * Bedeutung haengt vom Zieltyp ab (eliminateAll: zerstoerte von allen
    * Feindeinheiten; destroyHQ: 0/1; captureCities: eigene von geforderten

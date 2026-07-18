@@ -36,6 +36,11 @@ for (const type of TERRAIN_TYPES) {
 
 type MinimapUnit = Pick<EntitySnapshot, 'x' | 'y' | 'faction'>;
 type MinimapBuilding = Pick<BuildingSnapshot, 'x' | 'y' | 'faction'>;
+// Radar-Kontakt (PLAN.md Session B): anonyme Position ausserhalb der
+// Sichtweite - als gelber Hohlkreis gezeichnet, damit er sich klar von den
+// vollen roten Blips gesehener Feinde unterscheidet.
+type RadarContact = { x: number; y: number };
+const RADAR_COLOR = '#ffcc33';
 
 // Frustum-Ecken auf der Bodenebene, Reihenfolge im Umlaufsinn
 // (render/camera.ts getGroundViewportCorners).
@@ -43,7 +48,7 @@ export type ViewportCorners = ReadonlyArray<{ x: number; z: number }>;
 
 export interface Minimap {
   setTerrain(mapWidth: number, mapHeight: number, terrainTypes: Uint8Array): void;
-  update(units: ReadonlyArray<MinimapUnit>, buildings?: ReadonlyArray<MinimapBuilding>): void;
+  update(units: ReadonlyArray<MinimapUnit>, buildings?: ReadonlyArray<MinimapBuilding>, radarContacts?: ReadonlyArray<RadarContact>): void;
   setViewport(corners: ViewportCorners): void;
   dispose(): void;
 }
@@ -99,6 +104,7 @@ export function createMinimap(parent: HTMLElement, onNavigate?: (worldX: number,
   // nur pro Tick (12 Hz, main.ts).
   let latestUnits: ReadonlyArray<MinimapUnit> = [];
   let latestBuildings: ReadonlyArray<MinimapBuilding> = [];
+  let latestRadarContacts: ReadonlyArray<RadarContact> = [];
   let viewportCorners: ViewportCorners = [];
 
   function toCanvasX(worldX: number): number {
@@ -117,6 +123,7 @@ export function createMinimap(parent: HTMLElement, onNavigate?: (worldX: number,
     // naechste Server-Tick liefert den frischen Stand.
     latestUnits = [];
     latestBuildings = [];
+    latestRadarContacts = [];
 
     const resX = background.width;
     const resY = background.height;
@@ -151,6 +158,16 @@ export function createMinimap(parent: HTMLElement, onNavigate?: (worldX: number,
       ctx.fill();
     }
 
+    // Radar-Kontakte als gelbe Hohlkreise ueber allem - "da ist etwas,
+    // aber wir sehen es nicht" (PLAN.md Session B).
+    ctx.strokeStyle = RADAR_COLOR;
+    ctx.lineWidth = 1.2;
+    for (const contact of latestRadarContacts) {
+      ctx.beginPath();
+      ctx.arc(toCanvasX(contact.x), toCanvasY(contact.y), BLIP_RADIUS + 0.8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     // Kamera-Ausschnitt als umlaufende Linie; Ecken ausserhalb der Karte
     // schneidet das Canvas von selbst ab.
     if (viewportCorners.length >= 3) {
@@ -166,9 +183,10 @@ export function createMinimap(parent: HTMLElement, onNavigate?: (worldX: number,
     }
   }
 
-  function update(units: ReadonlyArray<MinimapUnit>, buildings: ReadonlyArray<MinimapBuilding> = []): void {
+  function update(units: ReadonlyArray<MinimapUnit>, buildings: ReadonlyArray<MinimapBuilding> = [], radarContacts: ReadonlyArray<RadarContact> = []): void {
     latestUnits = units;
     latestBuildings = buildings;
+    latestRadarContacts = radarContacts;
     render();
   }
 
