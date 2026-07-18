@@ -58,13 +58,14 @@ function tileCenterWorld(tile: GridPoint, grids: WalkabilityGrids): { x: number;
 
 // Ring-Suche nach einer freien Landkachel um "center" (wie findSpawnTile in
 // gameLoop.ts, aber mit beliebigem Suchzentrum). Gibt bei Erfolg die Kachel
-// zurueck und traegt sie in "occupied" ein.
+// zurueck und traegt sie in "occupied" ein. isValid bekommt Weltkoordinaten
+// (Abstandspruefungen) UND die Kachel (z. B. Wasser-Nachbar-Check des Hafens).
 function findLandTile(
   grids: WalkabilityGrids,
   center: GridPoint,
   minRadius: number,
   occupied: Set<string>,
-  isValid: (world: { x: number; y: number }) => boolean = () => true,
+  isValid: (world: { x: number; y: number }, tile: GridPoint) => boolean = () => true,
 ): GridPoint | null {
   const maxRadius = Math.max(grids.width, grids.height);
   for (let radius = minRadius; radius <= maxRadius; radius++) {
@@ -75,7 +76,7 @@ function findLandTile(
         const y = center.y + dy;
         const key = `${x},${y}`;
         if (occupied.has(key) || !isWalkable(grids, 'land', x, y)) continue;
-        if (!isValid(tileCenterWorld({ x, y }, grids))) continue;
+        if (!isValid(tileCenterWorld({ x, y }, grids), { x, y })) continue;
         occupied.add(key);
         return { x, y };
       }
@@ -113,7 +114,7 @@ export function initBuildings(grids: WalkabilityGrids): void {
   const occupied = new Set<string>();
   const center: GridPoint = { x: Math.floor(grids.width / 2), y: Math.floor(grids.height / 2) };
 
-  function place(id: string, buildingType: BuildingType, faction: BuildingFaction, searchCenter: GridPoint, minRadius: number, isValid?: (world: { x: number; y: number }) => boolean): BuildingState | null {
+  function place(id: string, buildingType: BuildingType, faction: BuildingFaction, searchCenter: GridPoint, minRadius: number, isValid?: (world: { x: number; y: number }, tile: GridPoint) => boolean): BuildingState | null {
     // Erst mit allen Bedingungen suchen, bei Fehlschlag schrittweise lockern
     // (kleinerer Mindestradius, dann ohne Zusatzfilter).
     const tile =
@@ -144,6 +145,13 @@ export function initBuildings(grids: WalkabilityGrids): void {
     place('tower-2', 'tower', 'enemy', enemyHq.tile, 3);
   }
 
+  // Mindestabstand zu allen bereits platzierten Gebaeuden (Weltkoordinaten):
+  // die occupied-Menge blockt nur die exakte Kachel, aber die Modelle sind
+  // mehrere Kacheln gross - ohne Abstand stuenden z. B. Flugplatz und Stadt
+  // ineinander. place() lockert den Filter bei Platzmangel selbst.
+  const farFromBuildings = (world: { x: number; y: number }): boolean =>
+    buildings.every((building) => Math.hypot(world.x - building.x, world.y - building.y) >= 6);
+
   // Neutrale Staedte: drei Suchzentren im Ring (Radius 18) um die Kartenmitte
   // in verschiedene Richtungen, damit sie nicht alle nebeneinander liegen.
   for (let i = 0; i < 3; i++) {
@@ -152,8 +160,37 @@ export function initBuildings(grids: WalkabilityGrids): void {
       x: center.x + Math.round(Math.cos(angle) * 18),
       y: center.y + Math.round(Math.sin(angle) * 18),
     };
-    place(`city-${i + 1}`, 'city', 'neutral', searchCenter, 0);
+    place(`city-${i + 1}`, 'city', 'neutral', searchCenter, 0, farFromBuildings);
   }
+
+  // Wirtschafts-POIs (PLAN.md Session B): alle neutral, verteilt wie die
+  // Staedte in verschiedene Richtungen/Radien, damit man fuer jede Ressource
+  // bzw. Produktionsstaette ein Stueck Karte kontrollieren muss.
+  function poiCenter(angle: number, radius: number): GridPoint {
+    return {
+      x: center.x + Math.round(Math.cos(angle) * radius),
+      y: center.y + Math.round(Math.sin(angle) * radius),
+    };
+  }
+  place('mine-1', 'mine', 'neutral', poiCenter(Math.PI * 0.9, 14), 0, farFromBuildings);
+  place('mine-2', 'mine', 'neutral', poiCenter(Math.PI * 1.9, 26), 0, farFromBuildings);
+  place('barracks-1', 'barracks', 'neutral', poiCenter(Math.PI * 0.4, 12), 0, farFromBuildings);
+  place('airfield-1', 'airfield', 'neutral', poiCenter(Math.PI * 1.4, 22), 0, farFromBuildings);
+
+  // Hafen: braucht eine Landkachel mit direktem Wasser-Nachbar, sonst kann er
+  // spaeter keine Boote produzieren. BEWUSST ohne den Lockerungs-Fallback von
+  // place(): auf (fast) wasserlosen Karten (Wueste/Gebirge) entfaellt der
+  // Hafen lieber ganz, statt sinnlos im Landesinneren zu stehen.
+  const nearWater = (world: { x: number; y: number }, tile: GridPoint): boolean =>
+    farFromBuildings(world) &&
+    (isWalkable(grids, 'water', tile.x + 1, tile.y) ||
+      isWalkable(grids, 'water', tile.x - 1, tile.y) ||
+      isWalkable(grids, 'water', tile.x, tile.y + 1) ||
+      isWalkable(grids, 'water', tile.x, tile.y - 1));
+  const harborTile =
+    findLandTile(grids, poiCenter(Math.PI * 0.65, 20), 0, occupied, nearWater) ??
+    findLandTile(grids, center, 0, occupied, nearWater);
+  if (harborTile) buildings.push(createBuilding('harbor-1', 'harbor', 'neutral', harborTile, grids));
 }
 
 export function getBuildings(): BuildingState[] {

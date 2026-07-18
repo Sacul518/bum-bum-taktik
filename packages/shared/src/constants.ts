@@ -110,6 +110,12 @@ export const BUILDINGS: Record<BuildingType, BuildingProfile> = {
   factory: { name: 'Fabrik', maxHp: 300, vision: 8, capturable: true },
   city: { name: 'Stadt', maxHp: 250, vision: 6, capturable: true },
   tower: { name: 'Wachturm', maxHp: 200, vision: 10, capturable: false },
+  // Wirtschafts-POIs (PLAN.md Session B): starten neutral, gleiche
+  // Capture-Mechanik wie Staedte/Fabriken.
+  mine: { name: 'Mine', maxHp: 250, vision: 6, capturable: true },
+  barracks: { name: 'Kaserne', maxHp: 300, vision: 7, capturable: true },
+  harbor: { name: 'Hafen', maxHp: 300, vision: 8, capturable: true },
+  airfield: { name: 'Flugplatz', maxHp: 300, vision: 8, capturable: true },
 };
 
 // Einnahme: Infanterie einer fremden Fraktion in CAPTURE_RANGE fuellt den

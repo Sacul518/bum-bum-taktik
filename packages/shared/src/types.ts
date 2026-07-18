@@ -22,8 +22,9 @@ export type PlayerId = string;
 // Gebaeude (docs/KONZEPT.md Abschnitt 9, "Gebaeude & Basen"): statische
 // Landmarken auf Landkacheln. Staedte starten neutral und koennen von
 // Infanterie eingenommen werden (BUILDINGS in constants.ts sagt, welche
-// Typen einnehmbar sind).
-export type BuildingType = 'hq' | 'factory' | 'city' | 'tower';
+// Typen einnehmbar sind). Seit Session B (PLAN.md) dazu die Wirtschafts-
+// POIs: Mine (Material), Kaserne/Hafen/Flugplatz (Produktion).
+export type BuildingType = 'hq' | 'factory' | 'city' | 'tower' | 'mine' | 'barracks' | 'harbor' | 'airfield';
 
 export type BuildingFaction = Faction | 'neutral';
 

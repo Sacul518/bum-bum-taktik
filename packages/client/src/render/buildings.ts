@@ -63,11 +63,62 @@ function buildTower(faction: BuildingFaction): THREE.Group {
   return model;
 }
 
+// --- Wirtschafts-POIs (PLAN.md Session B) ---
+
+function buildMine(faction: BuildingFaction): THREE.Group {
+  const model = new THREE.Group();
+  // Abraumhaufen + Foerderturm mit Seilrad - liest sich als "Rohstoffe".
+  const heap = new THREE.Mesh(new THREE.ConeGeometry(1.1, 0.9, 8), material(0x5b5248));
+  heap.position.set(-0.5, 0.45, 0.4);
+  model.add(heap);
+  model.add(box(0.5, 1.6, 0.5, secondaryColor(faction), 0.6, 0.8, -0.4)); // Foerderturm
+  model.add(box(1.2, 0.5, 0.9, primaryColor(faction), 0.4, 0.25, 0.5)); // Werkshalle
+  const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.1, 12), material(COLOR_DARK));
+  wheel.rotation.x = Math.PI / 2;
+  wheel.position.set(0.6, 1.75, -0.4);
+  model.add(wheel);
+  return model;
+}
+
+function buildBarracks(faction: BuildingFaction): THREE.Group {
+  const model = new THREE.Group();
+  // Zwei lange flache Mannschaftsbaracken nebeneinander + Fahnenmast.
+  model.add(box(2.4, 0.7, 0.9, primaryColor(faction), 0, 0.35, -0.55));
+  model.add(box(2.4, 0.7, 0.9, secondaryColor(faction), 0, 0.35, 0.55));
+  model.add(cylinderY(0.05, 1.6, COLOR_DARK, -1.0, 0.8, 0));
+  model.add(box(0.4, 0.25, 0.05, primaryColor(faction), -0.8, 1.45, 0)); // Fahne
+  return model;
+}
+
+function buildHarbor(faction: BuildingFaction): THREE.Group {
+  const model = new THREE.Group();
+  model.add(box(2.6, 0.4, 1.6, secondaryColor(faction), 0, 0.2, 0)); // Kaimauer
+  model.add(box(1.2, 0.7, 0.9, primaryColor(faction), -0.6, 0.75, -0.2)); // Lagerhaus
+  model.add(cylinderY(0.12, 1.8, COLOR_DARK, 0.7, 0.9, 0.3)); // Kranmast
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.12, 0.12), material(COLOR_DARK));
+  arm.position.set(1.2, 1.7, 0.3);
+  model.add(arm); // Kranausleger
+  return model;
+}
+
+function buildAirfield(faction: BuildingFaction): THREE.Group {
+  const model = new THREE.Group();
+  model.add(box(3.4, 0.15, 1.2, 0x3c3c40, 0, 0.075, 0.5)); // Landebahn
+  model.add(box(1.2, 0.8, 0.9, primaryColor(faction), -0.8, 0.4, -0.7)); // Hangar
+  model.add(box(0.5, 1.3, 0.5, secondaryColor(faction), 0.9, 0.65, -0.7)); // Tower
+  model.add(box(0.7, 0.25, 0.7, COLOR_DARK, 0.9, 1.4, -0.7)); // Tower-Kanzel
+  return model;
+}
+
 const BUILDERS: Record<BuildingType, (faction: BuildingFaction) => THREE.Group> = {
   hq: buildHq,
   factory: buildFactory,
   city: buildCity,
   tower: buildTower,
+  mine: buildMine,
+  barracks: buildBarracks,
+  harbor: buildHarbor,
+  airfield: buildAirfield,
 };
 
 // Sichtbare Groesse pro Typ (PLAN.md Session A, Aufgabe 3): Gebaeude wirkten
@@ -80,6 +131,10 @@ const MODEL_SCALE: Record<BuildingType, { xz: number; y: number }> = {
   factory: { xz: 1.4, y: 1.4 }, // ~3.4x2.5 Kacheln
   city: { xz: 1.4, y: 1.5 }, // Haeuser-Cluster ~2.7x2.7 Kacheln
   tower: { xz: 1.25, y: 1.7 }, // ~5.8 Einheiten hoch
+  mine: { xz: 1.4, y: 1.4 },
+  barracks: { xz: 1.4, y: 1.4 },
+  harbor: { xz: 1.4, y: 1.4 },
+  airfield: { xz: 1.5, y: 1.4 }, // Landebahn ~5 Kacheln lang
 };
 
 // Balken wie bei den Einheiten (units.ts): Kamera-zugewandte Sprites auf der
@@ -98,6 +153,10 @@ const BAR_Y: Record<BuildingType, number> = {
   factory: 2.5,
   city: 2.0,
   tower: 3.6,
+  mine: 2.3,
+  barracks: 2.0,
+  harbor: 2.2,
+  airfield: 2.0,
 };
 
 function createBar(fillMaterial: THREE.SpriteMaterial, fillName: string, groupName: string, y: number): THREE.Group {
