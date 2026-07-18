@@ -18,7 +18,7 @@ import {
   type UnitType,
   type WalkabilityGrids,
 } from '@bum-bum-taktik/shared';
-import { updateEnemyAggro } from './ai.js';
+import { updateEnemyAggro, updateEnemyStrategy } from './ai.js';
 import { findBuilding } from './buildings.js';
 
 // Ohne Mission (freie Aufstellung, docs/KONZEPT.md Abschnitt 3.2): eine
@@ -78,15 +78,15 @@ let producedCounter = 0;
 // offsetX/offsetZ beim Terrain-Rendering im Client), das Begehbarkeits-
 // Raster ist dagegen 0-indiziert von der Kartenecke aus - diese beiden
 // Funktionen sind die einzige Stelle, an der zwischen beiden Systemen
-// umgerechnet wird.
-function worldToGrid(worldX: number, worldY: number, grids: WalkabilityGrids): GridPoint {
+// umgerechnet wird. Exportiert, weil auch die Feind-KI (ai.ts) Wege plant.
+export function worldToGrid(worldX: number, worldY: number, grids: WalkabilityGrids): GridPoint {
   return {
     x: Math.floor(worldX + grids.width / 2),
     y: Math.floor(worldY + grids.height / 2),
   };
 }
 
-function gridToWorld(point: GridPoint, grids: WalkabilityGrids): { x: number; y: number } {
+export function gridToWorld(point: GridPoint, grids: WalkabilityGrids): { x: number; y: number } {
   return {
     x: point.x - grids.width / 2 + 0.5,
     y: point.y - grids.height / 2 + 0.5,
@@ -467,7 +467,10 @@ function advanceUnit(unit: UnitState, grids: WalkabilityGrids): void {
 function updateAttackChase(unit: UnitState, grids: WalkabilityGrids): void {
   if (!unit.attackTargetId) return;
   const target = findUnit(unit.attackTargetId) ?? findBuilding(unit.attackTargetId);
-  if (!target) {
+  // Befehl verwerfen, wenn das Ziel weg ist ODER ein Gebaeude-Ziel durch
+  // eine Einnahme inzwischen der eigenen Fraktion gehoert - sonst wuerde
+  // die Einheit ihr frisch erobertes Gebaeude weiter beschiessen.
+  if (!target || ('buildingType' in target && target.faction === unit.faction)) {
     unit.attackTargetId = null;
     unit.attackGoal = null;
     unit.path = [];
@@ -613,6 +616,9 @@ export function advanceUnits(): { entities: EntitySnapshot[]; shots: ShotEvent[]
   if (!activeGrids) return { entities: [], shots: [] };
   const grids = activeGrids;
 
+  // Strategie (Gebaeude einnehmen/belagern, Produktion) VOR der Aggro:
+  // eine Spieler-Einheit in Reichweite verdraengt das Gebaeude-Ziel wieder.
+  updateEnemyStrategy(units, grids, TICK_INTERVAL_MS);
   updateEnemyAggro(units);
 
   for (const unit of units) {
