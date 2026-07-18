@@ -1,69 +1,108 @@
-# Zusammenfassung der autonomen Session (2026-07-16/17)
+# Zusammenfassung der Session (2026-07-17/18) — Session A aus docs/PLAN.md
 
-Auftrag: 5 priorisierte Aufgaben abarbeiten — Raycasting-Bugfix, Terminal-Upgrades,
-3D-Modelle & Waffen, Transport, Gebäude & Basen. Alle 5 sind fertig, verifiziert
-und gepusht. Hier steht, **was** getan wurde, **wie** es verifiziert wurde und
+Auftrag: Session A „Gameplay-Loop v1 + UX-Fixes" (Aufgaben 1–6 aus
+[`docs/PLAN.md`](./docs/PLAN.md)). **Alle 6 sind fertig, verifiziert und
+gepusht.** Hier steht, **was** getan wurde, **wie** es verifiziert wurde und
 **wie du es selbst testen kannst**.
 
 ## Was ist neu (aus Spieler-Sicht)
 
-1. **Klicks treffen jetzt das echte Gelände** (Commit `2a7d4fe`) — vorher wurde gegen eine flache y=0-Ebene geraycastet: bei geneigter Kamera und Hügeln/Senken landete der Move-Befehl auf der falschen Kachel. Jetzt echtes 3D-Raycasting gegen das Höhenfeld.
-2. **Terminal wie eine echte Shell** (Commit `128a067`) — Tab-Vervollständigung für Befehle UND Argumente (z. B. `board bo<Tab>` → `boat-1`), Ghost-Vorschlag in Grau hinter der Eingabe, Befehls-History mit Pfeiltasten, „Error Lens": fehlerhafte Token werden rot unterstrichen mit Meldung, „meintest du …?" bei Tippfehlern.
-3. **Echte 3D-Modelle statt Sprites** (Commit `6c2f9cc`) — Panzer (Ketten, Turm, Rohr), Infanterie, Boot (Rumpf mit Bug, Geschütz), Flugzeug (Tragflächen, Kanzel) als prozedurale Low-Poly-Modelle aus Three.js-Primitiven. Olivgrün = du, Rostrot = Feind. Dazu Licht (Hemisphären- + Richtungslicht).
-4. **Waffensystem** (ebenfalls `6c2f9cc`) — jede Einheit hat genau eine Waffe mit Reichweite, Schaden, Feuerpause, erlaubten Ziel-Domains und Bonus-Schaden: Panzerkanone (kann NICHT auf Flugzeuge), Sturmgewehr (einzige Boden-Flugabwehr), Schiffsgeschütz (Reichweite 8), Raketen (trifft alles, Bonus gegen Boote). Tracer-Farben pro Waffe (orange/gelb/rot).
-5. **Transport** (Commit `401ab83`) — Infanterie steigt in Boot (4 Plätze) oder Flugzeug (2) ein: Klick auf den eigenen Transporter (wenn nur Infanterie ausgewählt ist) oder Terminal `board <id>` / `unboard`. Eingestiegene sind unsichtbar und unangreifbar, sterben aber mit dem Transporter. Weiße Punkte über dem HP-Balken zeigen die Belegung.
-6. **Gebäude & Basen** (Commit `81e005c`) — auf jeder Karte: dein HQ + Fabrik nahe der Mitte, Feind-HQ + Fabrik + 2 Wachtürme weit weg, 3 neutrale Städte dazwischen.
-   - **Zerstörbar**: Klick auf feindliches/neutrales Gebäude = Angriffsbefehl.
-   - **Einnehmbar**: Infanterie neben Fabrik/Stadt (3 Kacheln) nimmt sie in 8 s ein (gelber Fortschrittsbalken); das Gebäude wechselt Farbe und Fraktion.
-   - **Sicht**: deine Gebäude stanzen Sichtkreise in den Fog of War.
-   - **Produktion**: Fabriken spawnen alle 30 s eine Infanterie ihrer Fraktion (max. 5 pro Fabrik) — auch die Feind-Fabrik!
-   - **Wachtürme** feuern hellblaue Flak (Reichweite 7) auf alles, was sich nähert — ein Flugzeug allein überlebt den Anflug aufs Feind-HQ nicht.
-   - Terminal-Befehl `buildings` zeigt alle Gebäude mit HP und Einnahme-Status.
+1. **Fog of War liegt jetzt auf dem Gelände** (Commit `7774e66`) — vorher
+   schwebte eine halbtransparente Ebene über der Karte, bei geneigter Kamera
+   sah man am Kartenrand drunter durch. Die Verdunkelung sitzt jetzt per
+   Shader-Hook direkt in den Materialien von Terrain (inkl. Wasser, Brücken,
+   Seitenwände) und Gebäuden. Sichtkreise funktionieren unverändert.
+2. **Minimap wie in einem MMO** (Commit `7aa1c3e`) — Klick oder Ziehen auf der
+   Minimap zentriert die Kamera auf die Stelle (wie LoL). Der aktuelle
+   Kamera-Ausschnitt ist als weißes Viereck eingezeichnet (dreht/schert sich
+   beim Drehen der Kamera mit), Gebäude erscheinen als kleine Quadrate:
+   grün = deine, rot = Feind, grau = neutral.
+3. **Gebäude sind jetzt sichtbar Gebäude** (Commit `9cefc28`) — HQ ~4×4
+   Kacheln, Fabrik ~3.4×2.5, Städte ~2.7×2.7, Wachtürme fast 6 Einheiten
+   hoch. Rein visuell, Reichweiten unverändert.
+4. **Missionen haben Ziele, Briefings und eine Kampagnen-Kette** (Commit
+   `6ac50f0`) — 9 Missionen in 4 Regionen (Plains 3, andere je 2). Jede hat
+   ein Ziel: alle Feinde zerstören, Feind-HQ zerstören oder n Städte
+   einnehmen. Beim Start gibt es ein Briefing + Ziel-Zeile im Terminal, der
+   neue Befehl `objective` zeigt den Fortschritt (z. B. „Staedte 1/2").
+   Niederlage jetzt auch, wenn dein HQ fällt. Folge-Missionen sind
+   `[gesperrt]`, bis du die Vorgängerin gewinnst (merkt sich der Server bis
+   zum Neustart — Persistenz kommt in Session C).
+5. **Terminal-Event-Log + `status`** (Commit `2e682b5`) — das Terminal meldet
+   automatisch: `[!] unter Beschuss` (max. alle 5 s pro Einheit),
+   `[X] Einheit/Gebäude verloren`, `[+] Einnahme abgeschlossen` (auch wenn der
+   Feind einnimmt!), `[+] Produktion fertig`, `[*] Missionsziel-Fortschritt`.
+   Auch bei geschlossenem Terminal — steht beim nächsten Öffnen im Verlauf.
+   Neuer Befehl `status`: Tabelle deiner Einheiten mit HP, Zustand
+   (kämpft/bewegt/idle/gehackt) und Position; Transporter zeigen „(n
+   eingestiegen)".
+6. **Balancing `erstkontakt`** (Commit `82d0486`) — Panzer 100→130 HP,
+   Flugzeug 80→100 HP und Reichweite 5→6, Wachturm-Schaden 12→7. Wer die
+   Feinde anklickt (= Angriffsbefehl), gewinnt jetzt zuverlässig; wer seine
+   Einheiten unbeaufsichtigt in die Feindbasis marschieren lässt, verliert
+   sie weiterhin an die Türme — das ist Absicht.
 
 ## So testest du es (5 Minuten)
 
 ```
-npm run dev          # in zwei Terminals: --workspace=packages/server und --workspace=packages/client
+npm run dev --workspace=packages/server   # Terminal 1
+npm run dev --workspace=packages/client   # Terminal 2
 ```
 
-1. http://localhost:5173 öffnen → neben deinen Einheiten stehen HQ (Bunker mit Antenne) und Fabrik (Halle mit Schornstein) in Olivgrün.
-2. `buildings` im Terminal → Tabelle mit 9 Gebäuden und Positionen.
-3. Terminal schließen (Escape), Infanterie anklicken, dann zu einer grauen Häusergruppe (neutrale Stadt) schicken → daneben stehen lassen → gelber Balken füllt sich, nach 8 s wird die Stadt grün (deine!) und ihr Sichtkreis lichtet den Nebel.
-4. Infanterie anklicken, dann aufs Boot klicken → sie läuft hin und steigt ein (weißer Punkt überm Boot). Boot irgendwohin fahren, `unboard` im Terminal → sie steigt wieder aus.
-5. Panzer auswählen, auf eine Stadt/das Feind-HQ klicken → er fährt hin und schießt es kaputt (HP-Balken am Gebäude).
-6. Warte 30 s → neben deiner Fabrik erscheint eine neue Infanterie-Einheit (`infantry-p1`).
-7. Tab-Taste im Terminal ausprobieren: `bo<Tab>` → `board`, dann nochmal Tab → Transporter-IDs.
+1. http://localhost:5173 öffnen, Kamera mit R/F neigen und rauszoomen: die
+   Verdunkelung liegt satt auf dem Gelände, kein heller Streifen am Rand.
+2. Auf der Minimap (rechts unten) irgendwohin klicken → Kamera springt hin,
+   das weiße Viereck sitzt an der Klickstelle. Ziehen → Kamera folgt flüssig.
+3. `missions` im Terminal → drei Plains-Missionen, zwei davon `[gesperrt]`.
+   `mission start landnahme` → Fehlermeldung („gewinne zuerst 'Erstkontakt'").
+4. `mission start erstkontakt` → Briefing + „Ziel:"-Zeile. `objective` →
+   „Feindeinheiten 0/2 zerstoert".
+5. Panzer/Infanterie/Flugzeug Richtung Nordosten schicken, Feinde anklicken
+   sobald sichtbar → nach dem Sieg: „MISSION ERFUELLT … Freigeschaltet:
+   'Landnahme'". `missions` zeigt erstkontakt als `[gewonnen]`.
+6. Terminal zwischendurch schließen (Escape) und nach einem Gefecht wieder
+   öffnen → die `[!]`/`[X]`-Ereigniszeilen stehen im Verlauf. `status` zeigt
+   die Zustandsspalte.
 
 ## Wie es verifiziert wurde
 
-- `npm run typecheck && npm run build` nach jedem Schritt — grün.
-- **Headless-E2E-Tests** (echte WebSocket-Clients gegen den laufenden Server):
-  - Raycasting: 7/7, Terminal: 23/23, Waffen: 24/24 (Domain-Regeln, Bonus-Schaden, Cooldowns), Transport: 9/9 (inkl. Fern-Anlauf: Infanterie läuft 8+ Kacheln zum Boot), **Gebäude: 13/13** (Platzierung, Capture mit Fortschritt, Turm-Flak, Fabrik-Produktion, Gebäude-Zerstörung), Fog/Recon-Regressionen: grün.
-- **Browser-Tests** (Chrome, per Subagent): Transport (board/unboard, Passagier-Punkte, keine JS-Fehler) und Gebäude (9 Gebäude gerendert, `buildings`-Tabelle, HQ/Fabrik/Städte optisch korrekt, keine JS-Fehler) — alle Schritte PASS.
+- `npm run build` (tsc + vite) nach jedem Schritt — grün.
+- **Headless-Tests** (echte WebSocket-Clients gegen den Dev-Server):
+  hello-Felder/Sperr-Erzwingung/Fortschritt (4/4), Event-Log (underFire,
+  unitLost, produced, objective, captured inkl. 5-s-Drosselung und
+  fighting-Flag), Bot-Testgefechte fürs Balancing (3/3 Siege mit
+  Angriffsbefehlen, Verlaufs-Logs für die Analyse).
+- **Browser-Tests** (Chrome, per Sonnet-Subagent, 4 Durchläufe): FoW-Optik
+  inkl. Kartenrand/Seitenwände, Minimap-Navigation/Viewport/Drag,
+  Gebäudegrößen, Missions-UI (Sperren, Briefing, objective), Event-Log bei
+  geschlossenem Terminal, status-Befehl — alle Prüfpunkte PASS, keine
+  Konsolen-/WebGL-Fehler.
+- **Dabei gefundener und gefixter Bug:** der eliminateAll-Fortschritt wurde
+  negativ, sobald die Feind-Fabrik nachproduzierte — zählt jetzt kumulierte
+  Abschüsse (total = Abschüsse + lebende Feinde, monoton).
 
 ## Technische Details (wo was liegt)
 
 | Bereich | Dateien |
 |---|---|
-| Waffenprofile, Transport-, Gebäude-Konstanten | `packages/shared/src/constants.ts` (`WEAPONS`, `TRANSPORT_CAPACITY`, `BUILDINGS`, `TOWER_WEAPON`) |
-| Gebäude-Logik (Platzierung/Capture/Produktion/Turm) | `packages/server/src/buildings.ts` |
-| Transport + Gebäude-Angriffsziele + Fabrik-Spawn | `packages/server/src/gameLoop.ts` |
-| Sichtquellen (Einheiten + Gebäude + Recon) | `packages/server/src/visibility.ts`, `packages/client/src/render/fog.ts` |
-| Prozedurale Modelle | `packages/client/src/render/models.ts` (Einheiten), `render/buildings.ts` (Gebäude) |
-| Terminal-Autocomplete/Error-Lens | `packages/client/src/terminal/registry.ts` + `commands/*.ts` |
-| Neue Terminal-Befehle | `commands/transport.ts` (`board`/`unboard`), `commands/buildings.ts` |
+| FoW-Shader-Hook + Sichtkreis-Stempel | `packages/client/src/render/fog.ts` (`applyFogDarkening`), angewandt in `render/terrain.ts` und `render/models.ts` |
+| Minimap-Navigation, Kamera-Viereck | `packages/client/src/ui/minimap.ts`, `render/camera.ts` (`centerCameraOn`, `getGroundViewportCorners`) |
+| Gebäude-Größen | `packages/client/src/render/buildings.ts` (`MODEL_SCALE`) |
+| Missionsziele, Briefings, Ketten-Logik | `packages/shared/src/missions.ts` (`MissionObjective`, `isMissionUnlocked`) |
+| Sieg-/Niederlage-Prüfung, Fortschritt, Event-Diff | `packages/server/src/index.ts` (Tick) |
+| Ereignis-Typen im Protokoll | `packages/shared/src/protocol.ts` (`GameEvent`, `objectiveProgress`, `wonMissionIds`) |
+| Neue Terminal-Befehle | `commands/objective.ts`, `commands/status.ts`; Missions-Sperren in `commands/missions.ts` |
+| Balancing-Werte | `packages/shared/src/constants.ts` (`MAX_HP`, `WEAPONS.plane`, `TOWER_WEAPON`) |
 
-Alle Design-Entscheidungen mit Begründung: `docs/KONZEPT.md`, Kästen „entschieden & umgesetzt" (zuletzt: „Gebäude & Basen", 2026-07-17).
+## Für dich notiert (Beobachtungen)
 
-## Für dich notiert (Balancing/Beobachtungen)
-
-- **Mission `erstkontakt` ist hart**: Im Browser-Test verlor der Spieler 3 von 4 Läufen gegen die 2 Feind-Einheiten. Wenn du das auch so empfindest: Stellschrauben sind `WEAPONS`/`MAX_HP` in `shared/src/constants.ts`.
-- Die Feind-Fabrik produziert bis zu 5 zusätzliche Feind-Infanteristen pro Karte — freie Karten werden dadurch lebendiger, Missionen bleiben unberührt (Sieg zählt weiterhin nur Einheiten, nicht Gebäude).
-- Ungeschützte Infanterie beim Einnehmen wird von der Feind-KI angegriffen (im Test passiert) — Eskorte mitschicken lohnt sich.
-
-## Offene Punkte (bewusst nicht gemacht)
-
-- Sieg/Niederlage hängt nur an Einheiten — „HQ zerstören" als Missionsziel wäre der nächste logische Schritt.
-- Feind-KI ignoriert Gebäude (greift nicht an, nimmt nicht ein).
-- Gebäude auf der Minimap fehlen noch.
-- Sonar/U-Boote, Wasser-Shader, PWA, Grafik-Feinschliff (Phase 3/4).
+- **Schwierigkeit war eine Klippe, keine Zahlenfrage:** Mit Angriffsbefehlen
+  (Feind anklicken) war `erstkontakt` schon vorher in ~7 s gewinnbar; ohne
+  sie wurden alle Einheiten aufgerieben. Die Balance-Änderungen machen das
+  Anfängerspiel überlebbarer, aber der eigentliche Lernschritt ist „klick
+  die Feinde an". Fürs Tutorial (Session C) vormerken.
+- **Auto-Feuer zielt nicht auf Gebäude** — Einheiten, die neben einem
+  Wachturm stehen, schießen nicht von selbst zurück. Bewusst so gelassen;
+  falls es frustriert, wäre das eine eigene Entscheidung.
+- Die Missions-Freischaltungen leben nur im Server-Speicher — Server-Neustart
+  setzt sie zurück. Persistenz ist Session C.
