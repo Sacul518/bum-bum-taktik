@@ -20,6 +20,7 @@ import { createBuildingMesh, applyBuildingSnapshot } from './render/buildings.js
 import { createPathLine, updatePathLine } from './render/path.js';
 import { spawnTracer, updateTracers } from './render/tracers.js';
 import { createFogOverlay, type FogOverlay } from './render/fog.js';
+import { createDecoration, disposeDecoration } from './render/deco.js';
 import { createMinimap } from './ui/minimap.js';
 import { createResourceHud } from './ui/resources.js';
 import { connectToServer } from './net/client.js';
@@ -151,6 +152,11 @@ let mapHeight = 0;
 // Das aktuelle Terrain-Mesh wird gemerkt, damit es beim naechsten hello
 // (Kartenwechsel) wieder aus der Szene entfernt werden kann.
 let terrainMesh: THREE.Mesh | null = null;
+// Karten-Deko (render/deco.ts): braucht die Gebaeudepositionen (Freihalte-
+// Zonen), die erst mit dem ersten StateUpdate nach dem hello ankommen -
+// deshalb dort gebaut. terrainTypesRef haelt das Terrain bis dahin fest.
+let decoGroup: THREE.Group | null = null;
+let terrainTypesRef: Uint8Array | null = null;
 
 // Verbindungsstatus nur bei Wechseln ins Terminal schreiben: der
 // Auto-Reconnect (net/client.ts) versucht es sonst alle paar Sekunden und
@@ -209,6 +215,11 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
         fogOverlay.dispose();
         fogOverlay = null;
       }
+      if (decoGroup) {
+        scene.remove(decoGroup);
+        disposeDecoration(decoGroup);
+        decoGroup = null;
+      }
       for (const mesh of unitMeshes.values()) scene.remove(mesh);
       unitMeshes.clear();
       for (const mesh of buildingMeshes.values()) scene.remove(mesh);
@@ -223,6 +234,7 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       mapWidth = message.mapWidth;
       mapHeight = message.mapHeight;
       terrainElevation = new Float32Array(message.elevation);
+      terrainTypesRef = terrainTypes;
       terrainMesh = createTerrainMesh(mapWidth, mapHeight, terrainTypes, terrainElevation);
       scene.add(terrainMesh);
       fogOverlay = createFogOverlay(mapWidth, mapHeight);
@@ -234,6 +246,13 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       const entities = new Map(message.entities.map((entity) => [entity.id, entity]));
       previousSnapshot = latestSnapshot;
       latestSnapshot = { receivedAt: performance.now(), entities };
+
+      // Karten-Deko einmal pro Karte bauen, sobald die Gebaeudepositionen
+      // (Freihalte-Zonen) aus dem ersten StateUpdate bekannt sind.
+      if (!decoGroup && terrainTypesRef && terrainElevation) {
+        decoGroup = createDecoration(mapWidth, mapHeight, terrainTypesRef, terrainElevation, message.buildings);
+        scene.add(decoGroup);
+      }
 
       // Fog + Minimap nur pro Server-Tick (12 Hz) aktualisieren, nicht pro
       // Frame - beide arbeiten direkt auf den Snapshot-Positionen.
