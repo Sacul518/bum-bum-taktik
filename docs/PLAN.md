@@ -83,19 +83,37 @@ Reihenfolge einhalten, jede Aufgabe einzeln verifizieren + committen:
 
 ## Session B — Wirtschaft, POIs & Karte
 
-- [ ] Zwei Ressourcen: **Credits** aus eingenommenen Städten, **Material** aus
+Alle sechs Aufgaben erledigt 2026-07-18 (Reihenfolge angepasst: POIs zuerst,
+weil Minen-Einkommen und Produktionsgebäude sie brauchen). Details in
+`ZUSAMMENFASSUNG.md`.
+
+- [x] Zwei Ressourcen: **Credits** aus eingenommenen Städten, **Material** aus
   Minen; laufendes Einkommen pro Gebäude, Anzeige im HUD/Terminal.
-- [ ] Neue neutrale, einnehmbare POIs: **Mine, Kaserne, Hafen, Flugplatz**
-  (gleiche Capture-Mechanik wie Städte/Fabriken).
-- [ ] Produktion kostet Ressourcen und passiert am passenden Gebäude:
+  *Erledigt: `server/economy.ts`, Konto pro Fraktion; Abweichung: das HQ gibt
+  zusätzlich +1 Credit/s Grundsold, damit keine Fraktion je trockenliegt.
+  HUD oben rechts + `resources`-Befehl.*
+- [x] Neue neutrale, einnehmbare POIs: **Mine, Kaserne, Hafen, Flugplatz**
+  (gleiche Capture-Mechanik wie Städte/Fabriken). *Erledigt: 2 Minen, 1
+  Kaserne, 1 Flugplatz, 1 Hafen (nur auf Kachel mit Wasser-Nachbar, entfällt
+  sonst); Mindestabstand 6 zu anderen Gebäuden.*
+- [x] Produktion kostet Ressourcen und passiert am passenden Gebäude:
   Kaserne→Infanterie, Fabrik→Panzer, Hafen→Boote, Flugplatz→Flugzeuge
   (ersetzt die bisherige Gratis-Infanterie-Produktion der Fabriken).
-- [ ] Karte füllen: Wälder/Felsen als Deko (Instanced Meshes — iPad-GPU-Budget
-  beachten, siehe KONZEPT Abschnitt 4).
-- [ ] **Radar** als eigenes Sensorsystem: Kontakte außerhalb der Sichtweite als
+  *Erledigt: `produce`-Terminalbefehl, `produceResult` unicast, Baustatus im
+  BuildingSnapshot; Einnahme bricht laufende Produktion ab.*
+- [x] Karte füllen: Wälder/Felsen als Deko (Instanced Meshes — iPad-GPU-Budget
+  beachten, siehe KONZEPT Abschnitt 4). *Erledigt: 3 Draw-Calls gesamt, Caps
+  4000/2000, deterministischer Kachel-Hash, Freihalte-Zone um Gebäude.*
+- [x] **Radar** als eigenes Sensorsystem: Kontakte außerhalb der Sichtweite als
   Blips auf der Minimap (KONZEPT Abschnitt 4) — FoW bleibt davon getrennt.
-- [ ] Feind-KI nutzt Gebäude/Produktion rudimentär (nimmt Städte ein, greift
-  Spieler-Gebäude an).
+  *Erledigt: HQ Radius 40, eingenommener Flugplatz 30; anonyme gerundete
+  Positionen, gelbe Hohlkreise auf der Minimap.*
+- [x] Feind-KI nutzt Gebäude/Produktion rudimentär (nimmt Städte ein, greift
+  Spieler-Gebäude an). *Erledigt: Strategie-Schicht alle 2 s in `ai.ts`
+  (Infanterie nimmt ein, Kampfeinheiten belagern, Produktion vom
+  enemy-Konto, Cap 16). Balance-Beobachtung: `erstkontakt` gewinnt sich im
+  Leerlauf selbst, weil die KI in die Spieler-Waffen rennt — fürs nächste
+  Balancing vormerken.*
 
 ## Session C — Meta
 

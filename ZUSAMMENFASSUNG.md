@@ -1,46 +1,48 @@
-# Zusammenfassung der Session (2026-07-17/18) — Session A aus docs/PLAN.md
+# Zusammenfassung der Session (2026-07-18) — Session B aus docs/PLAN.md
 
-Auftrag: Session A „Gameplay-Loop v1 + UX-Fixes" (Aufgaben 1–6 aus
+Auftrag: Session B „Wirtschaft, POIs & Karte" (alle 6 Aufgaben aus
 [`docs/PLAN.md`](./docs/PLAN.md)). **Alle 6 sind fertig, verifiziert und
 gepusht.** Hier steht, **was** getan wurde, **wie** es verifiziert wurde und
 **wie du es selbst testen kannst**.
 
 ## Was ist neu (aus Spieler-Sicht)
 
-1. **Fog of War liegt jetzt auf dem Gelände** (Commit `7774e66`) — vorher
-   schwebte eine halbtransparente Ebene über der Karte, bei geneigter Kamera
-   sah man am Kartenrand drunter durch. Die Verdunkelung sitzt jetzt per
-   Shader-Hook direkt in den Materialien von Terrain (inkl. Wasser, Brücken,
-   Seitenwände) und Gebäuden. Sichtkreise funktionieren unverändert.
-2. **Minimap wie in einem MMO** (Commit `7aa1c3e`) — Klick oder Ziehen auf der
-   Minimap zentriert die Kamera auf die Stelle (wie LoL). Der aktuelle
-   Kamera-Ausschnitt ist als weißes Viereck eingezeichnet (dreht/schert sich
-   beim Drehen der Kamera mit), Gebäude erscheinen als kleine Quadrate:
-   grün = deine, rot = Feind, grau = neutral.
-3. **Gebäude sind jetzt sichtbar Gebäude** (Commit `9cefc28`) — HQ ~4×4
-   Kacheln, Fabrik ~3.4×2.5, Städte ~2.7×2.7, Wachtürme fast 6 Einheiten
-   hoch. Rein visuell, Reichweiten unverändert.
-4. **Missionen haben Ziele, Briefings und eine Kampagnen-Kette** (Commit
-   `6ac50f0`) — 9 Missionen in 4 Regionen (Plains 3, andere je 2). Jede hat
-   ein Ziel: alle Feinde zerstören, Feind-HQ zerstören oder n Städte
-   einnehmen. Beim Start gibt es ein Briefing + Ziel-Zeile im Terminal, der
-   neue Befehl `objective` zeigt den Fortschritt (z. B. „Staedte 1/2").
-   Niederlage jetzt auch, wenn dein HQ fällt. Folge-Missionen sind
-   `[gesperrt]`, bis du die Vorgängerin gewinnst (merkt sich der Server bis
-   zum Neustart — Persistenz kommt in Session C).
-5. **Terminal-Event-Log + `status`** (Commit `2e682b5`) — das Terminal meldet
-   automatisch: `[!] unter Beschuss` (max. alle 5 s pro Einheit),
-   `[X] Einheit/Gebäude verloren`, `[+] Einnahme abgeschlossen` (auch wenn der
-   Feind einnimmt!), `[+] Produktion fertig`, `[*] Missionsziel-Fortschritt`.
-   Auch bei geschlossenem Terminal — steht beim nächsten Öffnen im Verlauf.
-   Neuer Befehl `status`: Tabelle deiner Einheiten mit HP, Zustand
-   (kämpft/bewegt/idle/gehackt) und Position; Transporter zeigen „(n
-   eingestiegen)".
-6. **Balancing `erstkontakt`** (Commit `82d0486`) — Panzer 100→130 HP,
-   Flugzeug 80→100 HP und Reichweite 5→6, Wachturm-Schaden 12→7. Wer die
-   Feinde anklickt (= Angriffsbefehl), gewinnt jetzt zuverlässig; wer seine
-   Einheiten unbeaufsichtigt in die Feindbasis marschieren lässt, verliert
-   sie weiterhin an die Türme — das ist Absicht.
+1. **Neue neutrale POIs** (Commit `00df36c`) — Mine, Kaserne, Hafen,
+   Flugplatz stehen jetzt zusätzlich zu Städten/Fabriken auf der Karte,
+   gleiche Einnahme-Mechanik (Infanterie in Reichweite). Eigene Modelle:
+   Mine mit Förderturm + Abraumhaufen, Kaserne mit zwei Baracken + Fahne,
+   Hafen mit Kranmast an der Küste, Flugplatz mit Landebahn + Tower. Der
+   Hafen entfällt auf Karten ohne Wasser in der Nähe (z. B. Wüste/Gebirge).
+2. **Wirtschaft: Credits + Material** (Commit `b97ca54`) — HUD oben rechts
+   zeigt den Kontostand (`$ 150    # 60` zu Beginn). Credits kommen aus
+   Städten (+2/s) und einem HQ-Grundsold (+1/s, damit niemand je
+   trockenliegt), Material nur aus Minen (+1/s pro Mine). Neuer Befehl
+   `resources` zeigt Kontostand plus Einkommensquellen im Detail.
+3. **Produktion kostet Ressourcen** (Commit `18aace7`) — die alte
+   Gratis-Infanterie der Fabriken ist weg. Neuer Befehl `produce <einheit>
+   [gebäudeId]`: Kaserne baut Infanterie (30 Credits), Fabrik Panzer (80+40
+   Material), Hafen Boote (70+30), Flugplatz Flugzeuge (100+50) — jeweils am
+   ersten freien eigenen Gebäude des passenden Typs. `produce` ohne
+   Argumente zeigt die Kostentabelle. Läuft ein Bau, zeigt `buildings` den
+   Fortschritt in Prozent. Wird ein Gebäude erobert, verfällt eine laufende
+   Produktion des alten Besitzers.
+4. **Karte wirkt belebter** (Commit `b60390e`) — Bäume auf Ebenen/Hügeln,
+   Felsen auf Hügeln/Bergen/Sand, als Instanced Meshes (nur 3 Draw-Calls
+   für die ganze Karte). Deterministisch aus den Kachelkoordinaten
+   gehasht, sieht bei jedem Neuladen gleich aus. Um Gebäude bleibt eine
+   Freifläche.
+5. **Radar als eigenes Sensorsystem** (Commit `d08606b`) — getrennt vom Fog
+   of War: HQ und ein eigener Flugplatz erkennen Feinde in großem Radius
+   (40 bzw. 30 Kacheln) als anonyme gelbe Hohlkreise auf der Minimap, auch
+   wenn keine eigene Einheit sie tatsächlich sieht. Zeigt nur "da ist
+   etwas", keine Einheiten-Info, kein 3D-Rendering.
+6. **Feind-KI nutzt Gebäude** (Commit `ad826ed`) — alle 2 Sekunden
+   entscheidet die Feind-KI neu: freie Infanterie marschiert zum nächsten
+   einnehmbaren fremden Gebäude, Kampfeinheiten ohne Ziel belagern
+   Spieler-Gebäude, freie Feind-Produktionsgebäude bestellen Einheiten vom
+   eigenen Konto (Cap 16 Einheiten gegen Karten-Flutung). Eine
+   Spieler-Einheit in Aggro-Reichweite hat weiter Vorrang vor dem
+   Gebäude-Ziel.
 
 ## So testest du es (5 Minuten)
 
@@ -49,60 +51,72 @@ npm run dev --workspace=packages/server   # Terminal 1
 npm run dev --workspace=packages/client   # Terminal 2
 ```
 
-1. http://localhost:5173 öffnen, Kamera mit R/F neigen und rauszoomen: die
-   Verdunkelung liegt satt auf dem Gelände, kein heller Streifen am Rand.
-2. Auf der Minimap (rechts unten) irgendwohin klicken → Kamera springt hin,
-   das weiße Viereck sitzt an der Klickstelle. Ziehen → Kamera folgt flüssig.
-3. `missions` im Terminal → drei Plains-Missionen, zwei davon `[gesperrt]`.
-   `mission start landnahme` → Fehlermeldung („gewinne zuerst 'Erstkontakt'").
-4. `mission start erstkontakt` → Briefing + „Ziel:"-Zeile. `objective` →
-   „Feindeinheiten 0/2 zerstoert".
-5. Panzer/Infanterie/Flugzeug Richtung Nordosten schicken, Feinde anklicken
-   sobald sichtbar → nach dem Sieg: „MISSION ERFUELLT … Freigeschaltet:
-   'Landnahme'". `missions` zeigt erstkontakt als `[gewonnen]`.
-6. Terminal zwischendurch schließen (Escape) und nach einem Gefecht wieder
-   öffnen → die `[!]`/`[X]`-Ereigniszeilen stehen im Verlauf. `status` zeigt
-   die Zustandsspalte.
+1. http://localhost:5173 öffnen — oben rechts läuft der Ressourcen-Zähler
+   hoch. `resources` im Terminal zeigt die Aufschlüsselung.
+2. `buildings` → mine-1, mine-2, barracks-1, airfield-1, harbor-1 stehen in
+   der Liste (neutral). Herauszoomen: Bäume/Felsen sind auf der Karte
+   verteilt, die POI-Modelle sehen unterschiedlich aus.
+3. `produce` → Kostentabelle. `produce infantry` → Ablehnung ("brauchst
+   eine Kaserne"). `produce tank` → "Produktion gestartet ... 15s", Kosten
+   werden sofort abgezogen. `buildings` zeigt "baut tank (X%)" bei
+   factory-player. Nach 15s: `status` zeigt die neue Einheit.
+4. Minimap beobachten: nach einer Weile tauchen gelbe Hohlkreise auf (Radar
+   erkennt Feinde weiter weg, bevor sie sichtbar sind).
+5. Ein paar Minuten laufen lassen: die Feind-KI nimmt Gebäude ein
+   (`buildings` zeigt Fraktionswechsel), Feindeinheiten laufen Richtung
+   Spieler-Basis statt stumpf stehen zu bleiben.
 
 ## Wie es verifiziert wurde
 
-- `npm run build` (tsc + vite) nach jedem Schritt — grün.
-- **Headless-Tests** (echte WebSocket-Clients gegen den Dev-Server):
-  hello-Felder/Sperr-Erzwingung/Fortschritt (4/4), Event-Log (underFire,
-  unitLost, produced, objective, captured inkl. 5-s-Drosselung und
-  fighting-Flag), Bot-Testgefechte fürs Balancing (3/3 Siege mit
-  Angriffsbefehlen, Verlaufs-Logs für die Analyse).
-- **Browser-Tests** (Chrome, per Sonnet-Subagent, 4 Durchläufe): FoW-Optik
-  inkl. Kartenrand/Seitenwände, Minimap-Navigation/Viewport/Drag,
-  Gebäudegrößen, Missions-UI (Sperren, Briefing, objective), Event-Log bei
-  geschlossenem Terminal, status-Befehl — alle Prüfpunkte PASS, keine
-  Konsolen-/WebGL-Fehler.
-- **Dabei gefundener und gefixter Bug:** der eliminateAll-Fortschritt wurde
-  negativ, sobald die Feind-Fabrik nachproduzierte — zählt jetzt kumulierte
-  Abschüsse (total = Abschüsse + lebende Feinde, monoton).
+- `npm run build` (tsc + vite) nach jedem der 6 Schritte — grün.
+- **Headless-Tests** (echte WebSocket-Clients gegen den Dev-Server), je
+  einer pro Feature: POI-Platzierung (alle 5 neutral), Einkommen (+6
+  Credits in 6s bei ruhendem Konto), Produktion (alle 4 Ablehnungsgründe,
+  Kostenabzug, Spawn nach Bauzeit neben dem Gebäude, keine Gratis-Infanterie
+  mehr), Radar (Kontakte nur im Radius, keine Feind-Entities im Snapshot),
+  Feind-KI (Produktion nach 1s, Angriff nach 4s, Einnahme nach 10s — alle
+  drei Verhaltensweisen in einem 90s-Lauf beobachtet).
+- **Browser-Test** (Chrome, per Sonnet-Subagent): HUD, Deko, POI-Modelle,
+  alle Terminal-Befehle, Konsole — alle Prüfpunkte PASS, keine
+  Konsolenfehler. Radar-Blips konnten im Testfenster nicht visuell
+  bestätigt werden (kein Feind stand zufällig in der Radar-only-Zone),
+  Code-Pfad ist aber durch den Headless-Test verifiziert.
+
+## Für dich notiert (Beobachtungen)
+
+- **`erstkontakt` gewinnt sich im Leerlauf oft selbst:** Weil die
+  Feind-KI jetzt aktiv auf die Spieler-Basis zumarschiert, läuft sie der
+  automatischen Abwehr (Auto-Feuer der Spieler-Einheiten) in die Waffen —
+  ein 90-Sekunden-Testlauf ganz ohne Spielereingriff endete mit Sieg. Für
+  das nächste Balancing vormerken: entweder ist das gewünscht ("die KI
+  greift jetzt wirklich an"), oder die frühen Missionen brauchen einen
+  Vorsprung, damit ein Sieg noch Spielleistung erfordert.
+- **Hafen-Farbe im Browser-Test als "rostrot" beschrieben:** Der Code setzt
+  für neutrale Gebäude durchgehend Grautöne (`primaryColor`/
+  `secondaryColor` in `render/buildings.ts`); die wahrscheinlichste
+  Erklärung ist, dass der Test-Agent stattdessen `mine-2` gesehen hat, die
+  während der langen Testsession von der KI erobert wurde (daher rot).
+  Beim nächsten visuellen Test kurz gegenchecken, ob der Hafen tatsächlich
+  grau ist.
+- Der Feind hat jetzt ein eigenes Ressourcenkonto (`economy.ts`,
+  `startProduction('enemy', ...)`) — bei künftigen Balance-Änderungen an
+  `UNIT_COST`/`BUILDING_INCOME_PER_S` wirken sie auf beide Fraktionen
+  gleich.
 
 ## Technische Details (wo was liegt)
 
 | Bereich | Dateien |
 |---|---|
-| FoW-Shader-Hook + Sichtkreis-Stempel | `packages/client/src/render/fog.ts` (`applyFogDarkening`), angewandt in `render/terrain.ts` und `render/models.ts` |
-| Minimap-Navigation, Kamera-Viereck | `packages/client/src/ui/minimap.ts`, `render/camera.ts` (`centerCameraOn`, `getGroundViewportCorners`) |
-| Gebäude-Größen | `packages/client/src/render/buildings.ts` (`MODEL_SCALE`) |
-| Missionsziele, Briefings, Ketten-Logik | `packages/shared/src/missions.ts` (`MissionObjective`, `isMissionUnlocked`) |
-| Sieg-/Niederlage-Prüfung, Fortschritt, Event-Diff | `packages/server/src/index.ts` (Tick) |
-| Ereignis-Typen im Protokoll | `packages/shared/src/protocol.ts` (`GameEvent`, `objectiveProgress`, `wonMissionIds`) |
-| Neue Terminal-Befehle | `commands/objective.ts`, `commands/status.ts`; Missions-Sperren in `commands/missions.ts` |
-| Balancing-Werte | `packages/shared/src/constants.ts` (`MAX_HP`, `WEAPONS.plane`, `TOWER_WEAPON`) |
+| Neue POI-Typen + Werte | `packages/shared/src/types.ts` (`BuildingType`), `constants.ts` (`BUILDINGS`) |
+| POI-Platzierung | `packages/server/src/buildings.ts` (`initBuildings`, Mindestabstand, Hafen-Wasser-Check) |
+| POI-Modelle | `packages/client/src/render/buildings.ts` (`buildMine`/`buildBarracks`/`buildHarbor`/`buildAirfield`) |
+| Wirtschaft (Konten, Einkommen) | `packages/server/src/economy.ts`, `shared/src/constants.ts` (`START_RESOURCES`, `BUILDING_INCOME_PER_S`) |
+| Ressourcen-HUD | `packages/client/src/ui/resources.ts`, Terminal-Befehl `commands/resources.ts` |
+| Produktion (Kosten, Bauzeit, Belegung) | `packages/server/src/buildings.ts` (`startProduction`), `shared/src/constants.ts` (`PRODUCTION_BUILDING`/`UNIT_COST`/`PRODUCTION_TIME_MS`) |
+| Produktions-Protokoll | `shared/src/protocol.ts` (`ProduceCommand`/`ProduceResultMessage`), Terminal-Befehl `commands/produce.ts` |
+| Karten-Deko | `packages/client/src/render/deco.ts` (Instanced Meshes, Hash-Platzierung) |
+| Radar (Server + Minimap) | `packages/server/src/visibility.ts` (`computeRadarContacts`), `shared/src/constants.ts` (`RADAR_RANGE`), `packages/client/src/ui/minimap.ts` |
+| Feind-KI-Strategie | `packages/server/src/ai.ts` (`updateEnemyStrategy`) |
 
-## Für dich notiert (Beobachtungen)
-
-- **Schwierigkeit war eine Klippe, keine Zahlenfrage:** Mit Angriffsbefehlen
-  (Feind anklicken) war `erstkontakt` schon vorher in ~7 s gewinnbar; ohne
-  sie wurden alle Einheiten aufgerieben. Die Balance-Änderungen machen das
-  Anfängerspiel überlebbarer, aber der eigentliche Lernschritt ist „klick
-  die Feinde an". Fürs Tutorial (Session C) vormerken.
-- **Auto-Feuer zielt nicht auf Gebäude** — Einheiten, die neben einem
-  Wachturm stehen, schießen nicht von selbst zurück. Bewusst so gelassen;
-  falls es frustriert, wäre das eine eigene Entscheidung.
-- Die Missions-Freischaltungen leben nur im Server-Speicher — Server-Neustart
-  setzt sie zurück. Persistenz ist Session C.
+Die vollständige Session-A-Historie (Gameplay-Loop v1, FoW-Rework, Minimap-
+Navigation, Terminal-Event-Log) steht im Git-Log der Commits vor `00df36c`.
