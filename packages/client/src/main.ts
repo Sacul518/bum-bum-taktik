@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BUILDINGS, DEFAULT_SERVER_PORT, MAP_PRESETS, TICK_INTERVAL_MS, TRANSPORT_CAPACITY, describeObjective, getMission, missionsForRegion } from '@bum-bum-taktik/shared';
+import { BUILDINGS, DEFAULT_SERVER_PORT, MAP_PRESETS, MISSIONS, TICK_INTERVAL_MS, TRANSPORT_CAPACITY, describeObjective, getMission, missionsForRegion } from '@bum-bum-taktik/shared';
 import type { BuildingFaction, BuildingSnapshot, EntitySnapshot, Faction, GameEvent } from '@bum-bum-taktik/shared';
 import {
   createCameraRig,
@@ -25,6 +25,7 @@ import { createMinimap } from './ui/minimap.js';
 import { createResourceHud } from './ui/resources.js';
 import { createStartScreen } from './ui/startscreen.js';
 import { getSettings, onSettingsChange } from './ui/settings.js';
+import { createTutorial } from './ui/tutorial.js';
 import { connectToServer } from './net/client.js';
 import { resolveCameraInput } from './input/hotkeys.js';
 import { createTerminal } from './terminal/Terminal.js';
@@ -83,6 +84,11 @@ const startScreen = createStartScreen(document.body, (missionId) =>
   sendGameCommand({ type: 'startMission', missionId }),
 );
 startScreen.open();
+
+// Tutorial (PLAN.md Session C): die erste Kampagnenmission fuehrt durch die
+// Steuerung. Gestartet wird es beim hello mit dieser Mission, die
+// notify()-Aufrufe stecken direkt bei den jeweiligen Eingabe-Handlern.
+const tutorial = createTutorial(document.body);
 
 const pathLine = createPathLine();
 scene.add(pathLine);
@@ -225,6 +231,11 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       // anderen Client) schliesst die Auswahl.
       startScreen.refresh();
       if (mission) startScreen.close();
+
+      // Die erste Kampagnenmission startet das Tutorial (falls auf diesem
+      // Geraet noch nicht beendet); jede andere Karte raeumt es weg.
+      if (mission && mission.id === MISSIONS[0]?.id) tutorial.start();
+      else tutorial.stop();
 
       // Jedes hello ist ein kompletter Neuaufbau der Welt (kommt nach jedem
       // Kartenwechsel erneut, siehe protocol.ts): erst die alte Welt
@@ -380,6 +391,7 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
         if (next) terminal.print(`Freigeschaltet: '${next.name}' - starte sie mit "mission start ${next.id}".`);
       }
       terminal.print('Weiter geht es mit "mission start <id>" oder "map select <id>".');
+      tutorial.onMissionEnd(message.outcome);
       startScreen.open({ text: endText, tone: message.outcome });
     }
   },
@@ -563,6 +575,7 @@ renderer.domElement.addEventListener('pointermove', (event) => {
     const currentWorld = new THREE.Vector3();
     if (raycaster.ray.intersectPlane(panPlane, currentWorld)) {
       panCamera(cameraRig, drag.anchorWorld.x - currentWorld.x, drag.anchorWorld.z - currentWorld.z);
+      tutorial.notify('cameraMoved');
     }
   }
 });
@@ -583,6 +596,7 @@ renderer.domElement.addEventListener('pointerup', (event) => {
         for (const unitId of selectedUnitIds) {
           connection.send({ type: 'attack', unitId, targetId: clickedUnitId });
         }
+        if (selectedUnitIds.size > 0) tutorial.notify('attackOrdered');
       } else {
         // Klick auf einen eigenen Transporter, waehrend NUR Infanterie
         // ausgewaehlt ist = Einsteige-Befehl (Aufgabe "Infanterie-/Fahrzeug-
@@ -598,6 +612,7 @@ renderer.domElement.addEventListener('pointerup', (event) => {
         } else {
           selectedUnitIds.clear();
           selectedUnitIds.add(clickedUnitId);
+          tutorial.notify('unitSelected');
         }
       }
     } else {
@@ -619,6 +634,7 @@ renderer.domElement.addEventListener('pointerup', (event) => {
           unitIds: Array.from(selectedUnitIds),
           target: [drag.anchorWorld.x, drag.anchorWorld.z],
         });
+        tutorial.notify('moveOrdered');
       }
     }
   }
@@ -700,6 +716,10 @@ function render(): void {
   // geradeaus auf dem Bildschirm.
   const cameraInput = resolveCameraInput(pressedKeys);
   const cameraSpeedFactor = getSettings().cameraSpeed;
+  if (cameraInput.panForward !== 0 || cameraInput.panRight !== 0 || cameraInput.rotate !== 0 || cameraInput.tilt !== 0) {
+    tutorial.notify('cameraMoved');
+  }
+  if (terminal.isOpen()) tutorial.notify('terminalOpened');
   if (cameraInput.panForward !== 0 || cameraInput.panRight !== 0) {
     const { forward, right } = getGroundAxes(cameraRig);
     const length = Math.hypot(cameraInput.panForward, cameraInput.panRight);

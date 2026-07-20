@@ -133,7 +133,14 @@ weil Minen-Einkommen und Produktionsgebäude sie brauchen). Details in
   die decoGroup). Hilfe: Steuerung Maus/Touch/Tastatur, Spielablauf-
   Kurzregeln, Terminal-Befehlsliste aus der Registry (zweispaltig mit
   Umbruch).*
-- [ ] Tutorial: die erste Mission als geführte Einführung.
+- [x] Tutorial: die erste Mission als geführte Einführung. *Erledigt
+  2026-07-20: `client/src/ui/tutorial.ts` - Panel unten mittig, 6 Schritte
+  (Kamera, Auswahl, Marsch, Angriff, Terminal, Ziel), jede Stufe wird durch
+  die echte Aktion freigeschaltet (notify()-Hooks in main.ts), Ueberspringen
+  moeglich; "erledigt" pro Geraet in localStorage, Missionssieg zaehlt auch.
+  Offen (Balance, nicht Tutorial-Code): erstkontakt gewinnt sich teils in
+  Sekunden von selbst (Feind-KI rennt in die Spieler-Waffen, bekannt aus
+  Session B) - dann ist das Tutorial kaum sichtbar; Entscheidung bei Lucas.*
 - [ ] Mehrere Spielstände: serverseitige Persistenz (z. B. JSON-Datei pro
   Spielstand auf dem Pi) für Kampagnen-Fortschritt.
 - [ ] Progression + Achievements.
