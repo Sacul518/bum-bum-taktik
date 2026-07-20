@@ -23,6 +23,7 @@ import { createFogOverlay, type FogOverlay } from './render/fog.js';
 import { createDecoration, disposeDecoration } from './render/deco.js';
 import { createMinimap } from './ui/minimap.js';
 import { createResourceHud } from './ui/resources.js';
+import { createStartScreen } from './ui/startscreen.js';
 import { connectToServer } from './net/client.js';
 import { resolveCameraInput } from './input/hotkeys.js';
 import { createTerminal } from './terminal/Terminal.js';
@@ -35,6 +36,7 @@ import {
   getCurrentPreset,
   setCurrentPreset,
   setActiveMission,
+  sendGameCommand,
   setObjectiveProgress,
   setResources,
   setWonMissions,
@@ -62,15 +64,24 @@ renderer.domElement.addEventListener('webglcontextlost', (event) => {
   location.reload();
 });
 
-// In-Game-Terminal (docs/KONZEPT.md Abschnitt 6): beim Spielstart geoeffnet,
-// danach ueber den ">_"-Button am linken Rand ein-/ausblendbar.
+// In-Game-Terminal (docs/KONZEPT.md Abschnitt 6): ueber den ">_"-Button am
+// linken Rand ein-/ausblendbar. Beim Spielstart bleibt es zu - die
+// Missionsauswahl uebernimmt der Startscreen (PLAN.md Session C), das
+// Terminal ist Zweitweg und Ereignisprotokoll.
 const terminal = createTerminal(document.body);
 terminal.print('BUM BUM TAKTIK TERMINAL v0.1');
 terminal.print('');
 terminal.print("Tippe 'help' fuer alle Befehle, 'map list' fuer die Regionen.");
 terminal.print('Der >_-Button am linken Rand blendet das Terminal ein/aus, Escape schliesst.');
 terminal.print('');
-terminal.open();
+
+// Startscreen (PLAN.md Session C): Missions-/Kampagnenwahl beim Start statt
+// Terminal-Zwang. Der Start-Befehl geht ueber dieselbe gameBridge wie die
+// Terminal-Befehle (bindGameCommands weiter unten).
+const startScreen = createStartScreen(document.body, (missionId) =>
+  sendGameCommand({ type: 'startMission', missionId }),
+);
+startScreen.open();
 
 const pathLine = createPathLine();
 scene.add(pathLine);
@@ -202,6 +213,12 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
         terminal.print(formatMissionList(message.preset));
       }
 
+      // Startscreen nachziehen: Freischalt-Stati koennen sich geaendert
+      // haben; ein Missionsstart (auch durch einen Mitspieler auf einem
+      // anderen Client) schliesst die Auswahl.
+      startScreen.refresh();
+      if (mission) startScreen.close();
+
       // Jedes hello ist ein kompletter Neuaufbau der Welt (kommt nach jedem
       // Kartenwechsel erneut, siehe protocol.ts): erst die alte Welt
       // wegraeumen, sonst laege das neue Terrain ueber dem alten und
@@ -332,31 +349,30 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
     }
 
     // Missionsende (docs/KONZEPT.md Abschnitt 3.2): kommt genau einmal pro
-    // Mission. Terminal oeffnen, damit die Meldung nicht untergeht, wenn es
-    // gerade geschlossen ist.
+    // Mission. Statt das Terminal aufzudraengen, oeffnet sich der Startscreen
+    // mit dem Ergebnis in der Kopfzeile - dort ist die naechste Mission
+    // direkt anwaehlbar; das Terminal protokolliert weiter mit.
     if (message.type === 'missionEnd') {
       setWonMissions(message.wonMissionIds);
       const mission = getMission(message.missionId);
       const name = mission?.name ?? message.missionId;
+      const endText =
+        message.outcome === 'won'
+          ? `MISSION ERFUELLT: ${name} - Ziel erreicht.`
+          : message.reason === 'hqLost'
+            ? `MISSION GESCHEITERT: ${name} - das eigene Hauptquartier ist gefallen.`
+            : `MISSION GESCHEITERT: ${name} - alle eigenen Einheiten verloren.`;
       terminal.print('');
-      if (message.outcome === 'won') {
-        terminal.print(`MISSION ERFUELLT: ${name} - Ziel erreicht.`);
+      terminal.print(endText);
+      if (message.outcome === 'won' && mission) {
         // Freischaltung der Kette: die naechste Mission der Region nennen,
         // damit klar ist, wie es weitergeht.
-        if (mission) {
-          const chain = missionsForRegion(mission.region);
-          const next = chain[chain.findIndex((entry) => entry.id === mission.id) + 1];
-          if (next) terminal.print(`Freigeschaltet: '${next.name}' - starte sie mit "mission start ${next.id}".`);
-        }
-      } else {
-        terminal.print(
-          message.reason === 'hqLost'
-            ? `MISSION GESCHEITERT: ${name} - das eigene Hauptquartier ist gefallen.`
-            : `MISSION GESCHEITERT: ${name} - alle eigenen Einheiten verloren.`,
-        );
+        const chain = missionsForRegion(mission.region);
+        const next = chain[chain.findIndex((entry) => entry.id === mission.id) + 1];
+        if (next) terminal.print(`Freigeschaltet: '${next.name}' - starte sie mit "mission start ${next.id}".`);
       }
       terminal.print('Weiter geht es mit "mission start <id>" oder "map select <id>".');
-      terminal.open();
+      startScreen.open({ text: endText, tone: message.outcome });
     }
   },
 });

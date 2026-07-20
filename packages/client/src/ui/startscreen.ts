@@ -1,0 +1,398 @@
+import {
+  MAP_PRESETS,
+  MISSIONS,
+  describeObjective,
+  getMission,
+  isMissionUnlocked,
+  missionsForRegion,
+  previousMissionInRegion,
+  type MapPresetId,
+  type MissionDef,
+  type UnitType,
+} from '@bum-bum-taktik/shared';
+import { getActiveMission, getWonMissions } from '../terminal/gameBridge.js';
+
+// Startscreen (PLAN.md Session C): Missions-/Kampagnenwahl als Overlay im
+// Terminal-Look, statt dass der Spieler beim Start Terminal-Befehle tippen
+// muss. Links die Missionsketten aller Regionen (Reihenfolge wie in
+// shared/missions.ts), rechts Briefing + Ziel der ausgewaehlten Mission mit
+// Start-Button - das Briefing steht damit VOR dem Start lesbar da, das
+// Terminal bleibt Zweitweg und Ereignisprotokoll. Freischalt-/Gewonnen-
+// Stati kommen wie beim missions-Befehl aus der gameBridge (der Server
+// liefert sie per hello/missionEnd zu, main.ts ruft refresh()).
+
+const GREEN = '#33ff33';
+const ERROR_RED = '#ff6b5f';
+const MONO = '"Courier New", Courier, monospace';
+
+// Deutsche Anzeigenamen nur fuer den Startscreen - die Terminal-Befehle
+// nutzen bewusst weiter die technischen Ids (produce infantry usw.).
+const UNIT_NAME: Record<UnitType, string> = {
+  infantry: 'Infanterie',
+  tank: 'Panzer',
+  boat: 'Boot',
+  plane: 'Flugzeug',
+};
+
+/** Ergebnis-Zeile fuer die Kopfzeile nach einem Missionsende. */
+export interface MissionEndStatus {
+  text: string;
+  tone: 'won' | 'lost';
+}
+
+export interface StartScreen {
+  open(status?: MissionEndStatus): void;
+  close(): void;
+  toggle(): void;
+  isOpen(): boolean;
+  /** Baut Liste + Detail aus den gameBridge-Stati neu (nach jedem hello). */
+  refresh(): void;
+}
+
+export function createStartScreen(parent: HTMLElement, onStartMission: (missionId: string) => boolean): StartScreen {
+  // Regions-Reihenfolge wie das erste Auftreten in MISSIONS (Plains als
+  // Einstiegs-Kette zuerst), nicht die Record-Reihenfolge der MAP_PRESETS.
+  const regionOrder: MapPresetId[] = [];
+  for (const mission of MISSIONS) {
+    if (!regionOrder.includes(mission.region)) regionOrder.push(mission.region);
+  }
+
+  // Vorausgewaehlt ist die "naechste" Kampagnenmission: die erste noch nicht
+  // gewonnene, die schon freigeschaltet ist.
+  function defaultSelection(): string {
+    const won = getWonMissions();
+    const next = MISSIONS.find((mission) => !won.includes(mission.id) && isMissionUnlocked(mission.id, won));
+    return (next ?? (MISSIONS[0] as MissionDef)).id;
+  }
+
+  let selectedId = defaultSelection();
+
+  // --- Abdunkelnder Hintergrund + Panel ---
+  const root = document.createElement('div');
+  Object.assign(root.style, {
+    position: 'fixed',
+    inset: '0',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(0, 0, 0, 0.72)',
+    zIndex: '20',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  const panel = document.createElement('div');
+  Object.assign(panel.style, {
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    width: 'min(860px, calc(100vw - 32px))',
+    height: 'min(600px, calc(100vh - 32px))',
+    background: 'rgba(5, 10, 5, 0.95)',
+    border: '1px solid rgba(51, 255, 51, 0.55)',
+    borderRadius: '10px',
+    boxShadow: '0 16px 60px rgba(0, 0, 0, 0.6), 0 0 24px rgba(51, 255, 51, 0.25)',
+    color: GREEN,
+    fontFamily: MONO,
+    fontSize: '15px',
+    lineHeight: '1.45',
+    textShadow: '0 0 4px rgba(51, 255, 51, 0.6)',
+    overflow: 'hidden',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  // Scanline-Overlay wie beim Terminal - reine Optik, laesst Klicks durch.
+  const scanlines = document.createElement('div');
+  Object.assign(scanlines.style, {
+    position: 'absolute',
+    inset: '0',
+    background: 'repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.25) 0px, rgba(0, 0, 0, 0.25) 1px, transparent 1px, transparent 3px)',
+    pointerEvents: 'none',
+    zIndex: '1',
+  } satisfies Partial<CSSStyleDeclaration>);
+  panel.appendChild(scanlines);
+
+  // --- Kopfzeile: Titel + optionale Ergebniszeile nach Missionsende ---
+  const header = document.createElement('div');
+  Object.assign(header.style, {
+    padding: '14px 18px 10px',
+    borderBottom: '1px solid rgba(51, 255, 51, 0.35)',
+    flex: 'none',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  const title = document.createElement('div');
+  title.textContent = 'BUM BUM TAKTIK';
+  Object.assign(title.style, {
+    fontSize: '26px',
+    fontWeight: 'bold',
+    letterSpacing: '4px',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  const subtitle = document.createElement('div');
+  subtitle.textContent = 'KAMPAGNE - waehle deine Mission';
+  Object.assign(subtitle.style, {
+    fontSize: '13px',
+    letterSpacing: '2px',
+    opacity: '0.7',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  const statusLine = document.createElement('div');
+  Object.assign(statusLine.style, {
+    display: 'none',
+    marginTop: '6px',
+    fontSize: '14px',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  header.appendChild(title);
+  header.appendChild(subtitle);
+  header.appendChild(statusLine);
+  panel.appendChild(header);
+
+  // --- Inhalt: Missionsliste links, Detail rechts ---
+  const content = document.createElement('div');
+  Object.assign(content.style, {
+    display: 'flex',
+    flex: '1',
+    minHeight: '0',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  const list = document.createElement('div');
+  Object.assign(list.style, {
+    width: '44%',
+    overflowY: 'auto',
+    borderRight: '1px solid rgba(51, 255, 51, 0.35)',
+    padding: '6px 0 10px',
+    flex: 'none',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  const detail = document.createElement('div');
+  Object.assign(detail.style, {
+    flex: '1',
+    overflowY: 'auto',
+    padding: '14px 18px',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  content.appendChild(list);
+  content.appendChild(detail);
+  panel.appendChild(content);
+
+  // --- Fusszeile: Terminal-Hinweis + Zurueck-Button ---
+  const footer = document.createElement('div');
+  Object.assign(footer.style, {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    padding: '10px 18px',
+    borderTop: '1px solid rgba(51, 255, 51, 0.35)',
+    flex: 'none',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  const hint = document.createElement('div');
+  hint.textContent = 'Alles geht auch im Terminal (">_"-Button links): mission list, map select, help.';
+  Object.assign(hint.style, {
+    fontSize: '12px',
+    opacity: '0.6',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  const backButton = textButton('[ ZURUECK ZUM SPIEL ]');
+  backButton.addEventListener('click', () => close());
+
+  footer.appendChild(hint);
+  footer.appendChild(backButton);
+  panel.appendChild(footer);
+
+  root.appendChild(panel);
+  parent.appendChild(root);
+
+  // --- Seiten-Button am linken Rand (ueber dem ">_"-Terminal-Button) ---
+  const menuButton = document.createElement('button');
+  menuButton.title = 'Missionsauswahl ein-/ausblenden';
+  menuButton.textContent = '≡';
+  Object.assign(menuButton.style, {
+    position: 'fixed',
+    left: '14px',
+    top: 'calc(50% - 64px)',
+    transform: 'translateY(-50%)',
+    width: '52px',
+    height: '52px',
+    borderRadius: '12px',
+    background: 'linear-gradient(#2b2f33, #17191c)',
+    border: '1px solid #4a5056',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.45)',
+    color: GREEN,
+    fontFamily: MONO,
+    fontSize: '26px',
+    fontWeight: 'bold',
+    textShadow: '0 0 4px rgba(51, 255, 51, 0.6)',
+    cursor: 'pointer',
+    zIndex: '10',
+  } satisfies Partial<CSSStyleDeclaration>);
+  parent.appendChild(menuButton);
+
+  menuButton.addEventListener('click', () => {
+    toggle();
+    // Fokus abgeben, sonst wuerde die Leertaste den Button erneut "klicken".
+    menuButton.blur();
+  });
+
+  function textButton(label: string): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.textContent = label;
+    Object.assign(button.style, {
+      background: 'rgba(51, 255, 51, 0.08)',
+      border: '1px solid rgba(51, 255, 51, 0.55)',
+      borderRadius: '6px',
+      color: GREEN,
+      fontFamily: MONO,
+      fontSize: '14px',
+      padding: '8px 14px',
+      cursor: 'pointer',
+      textShadow: '0 0 4px rgba(51, 255, 51, 0.6)',
+      flex: 'none',
+    } satisfies Partial<CSSStyleDeclaration>);
+    return button;
+  }
+
+  function renderList(): void {
+    list.replaceChildren();
+    const won = getWonMissions();
+    for (const region of regionOrder) {
+      const regionHeader = document.createElement('div');
+      regionHeader.textContent = `== ${MAP_PRESETS[region].name.toUpperCase()} ==`;
+      Object.assign(regionHeader.style, {
+        padding: '10px 16px 4px',
+        fontSize: '12px',
+        letterSpacing: '2px',
+        opacity: '0.6',
+      } satisfies Partial<CSSStyleDeclaration>);
+      list.appendChild(regionHeader);
+
+      for (const mission of missionsForRegion(region)) {
+        const unlocked = isMissionUnlocked(mission.id, won);
+        const marker = won.includes(mission.id) ? '[x]' : unlocked ? '[ ]' : '[-]';
+        const active = getActiveMission() === mission.id;
+        const row = document.createElement('button');
+        row.textContent = `${marker} ${mission.name}${active ? ' (aktiv)' : ''}`;
+        Object.assign(row.style, {
+          display: 'block',
+          width: '100%',
+          textAlign: 'left',
+          padding: '6px 16px',
+          background: mission.id === selectedId ? 'rgba(51, 255, 51, 0.14)' : 'transparent',
+          border: 'none',
+          color: GREEN,
+          fontFamily: MONO,
+          fontSize: '15px',
+          cursor: 'pointer',
+          // Gesperrte Missionen bleiben anklickbar (Detail erklaert, was
+          // fehlt), sind aber sichtbar gedimmt.
+          opacity: unlocked ? '1' : '0.45',
+        } satisfies Partial<CSSStyleDeclaration>);
+        row.addEventListener('click', () => {
+          selectedId = mission.id;
+          renderList();
+          renderDetail();
+        });
+        list.appendChild(row);
+      }
+    }
+  }
+
+  function detailLine(text: string, style?: Partial<CSSStyleDeclaration>): void {
+    const line = document.createElement('div');
+    line.textContent = text;
+    if (style) Object.assign(line.style, style);
+    detail.appendChild(line);
+  }
+
+  function renderDetail(): void {
+    detail.replaceChildren();
+    const mission = getMission(selectedId);
+    if (!mission) return;
+    const won = getWonMissions();
+    const unlocked = isMissionUnlocked(mission.id, won);
+    const active = getActiveMission() === mission.id;
+
+    detailLine(mission.name, { fontSize: '19px', fontWeight: 'bold' });
+    detailLine(`Region: ${MAP_PRESETS[mission.region].name}${won.includes(mission.id) ? '  -  bereits gewonnen' : ''}`, {
+      fontSize: '13px',
+      opacity: '0.7',
+      marginBottom: '10px',
+    });
+    detailLine(mission.description, { opacity: '0.85', marginBottom: '10px' });
+
+    detailLine('BRIEFING', { fontSize: '12px', letterSpacing: '2px', opacity: '0.6' });
+    detailLine(mission.briefing, { marginBottom: '10px' });
+
+    detailLine(`Ziel: ${describeObjective(mission.objective)}`);
+    const troops = mission.setup
+      .filter((entry) => entry.faction === 'player')
+      .map((entry) => `${entry.count}x ${UNIT_NAME[entry.unitType]}`)
+      .join(', ');
+    detailLine(`Deine Truppe: ${troops}`, { marginBottom: '14px' });
+
+    if (!unlocked) {
+      const previous = previousMissionInRegion(mission.id);
+      detailLine(previous ? `Gesperrt - gewinne zuerst '${previous.name}'.` : 'Gesperrt.', {
+        color: ERROR_RED,
+        textShadow: '0 0 4px rgba(255, 107, 95, 0.6)',
+        marginBottom: '14px',
+      });
+      return;
+    }
+
+    const startButton = textButton(active ? '[ MISSION NEU STARTEN ]' : '[ MISSION STARTEN ]');
+    startButton.addEventListener('click', () => {
+      // Schliessen erst bei angenommenem Befehl - ohne Serververbindung
+      // (sendGameCommand liefert false) bliebe der Screen sonst kommentarlos
+      // zu, obwohl nichts gestartet wurde.
+      if (onStartMission(mission.id)) close();
+    });
+    detail.appendChild(startButton);
+  }
+
+  function refresh(): void {
+    // Nach einem Sieg auf die naechste freigeschaltete Mission springen -
+    // manuell ausgewaehlte (auch gewonnene) Missionen bleiben sonst stehen.
+    if (getWonMissions().includes(selectedId)) selectedId = defaultSelection();
+    renderList();
+    renderDetail();
+  }
+
+  function open(status?: MissionEndStatus): void {
+    if (status) {
+      statusLine.textContent = status.text;
+      statusLine.style.display = 'block';
+      statusLine.style.color = status.tone === 'won' ? GREEN : ERROR_RED;
+      statusLine.style.textShadow =
+        status.tone === 'won' ? '0 0 4px rgba(51, 255, 51, 0.6)' : '0 0 4px rgba(255, 107, 95, 0.6)';
+    } else {
+      statusLine.style.display = 'none';
+    }
+    refresh();
+    root.style.display = 'flex';
+  }
+
+  function close(): void {
+    root.style.display = 'none';
+  }
+
+  function isOpen(): boolean {
+    return root.style.display !== 'none';
+  }
+
+  function toggle(): void {
+    if (isOpen()) close();
+    else open();
+  }
+
+  // Escape schliesst (wie beim Terminal), Klick auf den dunklen Hintergrund
+  // ebenfalls - das Spiel laeuft hinter dem Overlay ohnehin weiter.
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && isOpen()) close();
+  });
+  root.addEventListener('pointerdown', (event) => {
+    if (event.target === root) close();
+  });
+
+  refresh();
+  return { open, close, toggle, isOpen, refresh };
+}

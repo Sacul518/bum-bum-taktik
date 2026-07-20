@@ -54,7 +54,9 @@ export function createTerminal(parent: HTMLElement): Terminal {
     height: 'min(420px, calc(100vh - 120px))',
     minWidth: '320px',
     minHeight: '200px',
-    display: 'flex',
+    // Startet unsichtbar - sichtbar wird das Fenster erst per open()
+    // (">_"-Button), beim Spielstart liegt stattdessen der Startscreen oben.
+    display: 'none',
     flexDirection: 'column',
     background: 'rgba(5, 10, 5, 0.92)',
     border: '1px solid rgba(51, 255, 51, 0.55)',

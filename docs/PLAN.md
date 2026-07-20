@@ -117,7 +117,15 @@ weil Minen-Einkommen und Produktionsgebäude sie brauchen). Details in
 
 ## Session C — Meta
 
-- [ ] Startscreen mit Missions-/Kampagnenwahl (statt Terminal-Zwang beim Start).
+- [x] Startscreen mit Missions-/Kampagnenwahl (statt Terminal-Zwang beim Start).
+  *Erledigt 2026-07-20: `client/src/ui/startscreen.ts` — Overlay im
+  Terminal-Look, links Missionsketten pro Region ([x]/[ ]/[-]-Marker,
+  gesperrte klickbar mit Erklaerung), rechts Briefing/Ziel/Truppe +
+  Start-Button; "≡"-Button am linken Rand oeffnet es wieder. `missionEnd`
+  oeffnet den Startscreen mit Ergebniszeile statt das Terminal aufzudraengen.
+  Dabei Bug gefixt: das Terminal-Fenster startete default-sichtbar
+  (`display: flex` in Terminal.ts), das bisherige `terminal.open()` beim
+  Start war wirkungslos — startet jetzt mit `display: none`.*
 - [ ] Settings-Seite, Hilfe-Seite.
 - [ ] Tutorial: die erste Mission als geführte Einführung.
 - [ ] Mehrere Spielstände: serverseitige Persistenz (z. B. JSON-Datei pro
