@@ -11,6 +11,8 @@ import {
   type UnitType,
 } from '@bum-bum-taktik/shared';
 import { getActiveMission, getWonMissions } from '../terminal/gameBridge.js';
+import { listCommands } from '../terminal/registry.js';
+import { getSettings, updateSettings } from './settings.js';
 
 // Startscreen (PLAN.md Session C): Missions-/Kampagnenwahl als Overlay im
 // Terminal-Look, statt dass der Spieler beim Start Terminal-Befehle tippen
@@ -145,6 +147,43 @@ export function createStartScreen(parent: HTMLElement, onStartMission: (missionI
   header.appendChild(statusLine);
   panel.appendChild(header);
 
+  // --- Tab-Leiste: Missionen | Einstellungen | Hilfe (PLAN.md Session C:
+  // Settings- und Hilfe-Seite leben als Seiten im selben Overlay) ---
+  type PageId = 'missions' | 'settings' | 'help';
+
+  const tabBar = document.createElement('div');
+  Object.assign(tabBar.style, {
+    display: 'flex',
+    borderBottom: '1px solid rgba(51, 255, 51, 0.35)',
+    flex: 'none',
+  } satisfies Partial<CSSStyleDeclaration>);
+  panel.appendChild(tabBar);
+
+  const tabButtons = new Map<PageId, HTMLButtonElement>();
+  for (const [page, label] of [
+    ['missions', 'MISSIONEN'],
+    ['settings', 'EINSTELLUNGEN'],
+    ['help', 'HILFE'],
+  ] as const) {
+    const tab = document.createElement('button');
+    tab.textContent = label;
+    Object.assign(tab.style, {
+      background: 'transparent',
+      border: 'none',
+      borderRight: '1px solid rgba(51, 255, 51, 0.35)',
+      color: GREEN,
+      fontFamily: MONO,
+      fontSize: '13px',
+      letterSpacing: '2px',
+      padding: '8px 18px',
+      cursor: 'pointer',
+      textShadow: '0 0 4px rgba(51, 255, 51, 0.6)',
+    } satisfies Partial<CSSStyleDeclaration>);
+    tab.addEventListener('click', () => showPage(page));
+    tabButtons.set(page, tab);
+    tabBar.appendChild(tab);
+  }
+
   // --- Inhalt: Missionsliste links, Detail rechts ---
   const content = document.createElement('div');
   Object.assign(content.style, {
@@ -172,6 +211,35 @@ export function createStartScreen(parent: HTMLElement, onStartMission: (missionI
   content.appendChild(list);
   content.appendChild(detail);
   panel.appendChild(content);
+
+  // Einstellungen und Hilfe teilen sich den Platz der Missionsseite -
+  // showPage() blendet genau eine der drei um.
+  function pageContainer(): HTMLDivElement {
+    const page = document.createElement('div');
+    Object.assign(page.style, {
+      display: 'none',
+      flex: '1',
+      minHeight: '0',
+      overflowY: 'auto',
+      padding: '14px 18px',
+    } satisfies Partial<CSSStyleDeclaration>);
+    panel.appendChild(page);
+    return page;
+  }
+  const settingsPage = pageContainer();
+  const helpPage = pageContainer();
+
+  function showPage(page: PageId): void {
+    content.style.display = page === 'missions' ? 'flex' : 'none';
+    settingsPage.style.display = page === 'settings' ? 'block' : 'none';
+    helpPage.style.display = page === 'help' ? 'block' : 'none';
+    for (const [id, tab] of tabButtons) {
+      tab.style.background = id === page ? 'rgba(51, 255, 51, 0.14)' : 'transparent';
+      tab.style.opacity = id === page ? '1' : '0.65';
+    }
+    if (page === 'settings') renderSettings();
+    if (page === 'help') renderHelp();
+  }
 
   // --- Fusszeile: Terminal-Hinweis + Zurueck-Button ---
   const footer = document.createElement('div');
@@ -349,6 +417,123 @@ export function createStartScreen(parent: HTMLElement, onStartMission: (missionI
     detail.appendChild(startButton);
   }
 
+  function appendLine(target: HTMLElement, text: string, style?: Partial<CSSStyleDeclaration>): void {
+    const line = document.createElement('div');
+    line.textContent = text;
+    if (style) Object.assign(line.style, style);
+    target.appendChild(line);
+  }
+
+  function sectionHeading(target: HTMLElement, text: string): void {
+    appendLine(target, text, { fontSize: '12px', letterSpacing: '2px', opacity: '0.6', marginBottom: '4px' });
+  }
+
+  const CAMERA_SPEED_CHOICES = [0.5, 1, 1.5, 2];
+
+  function renderSettings(): void {
+    settingsPage.replaceChildren();
+    const settings = getSettings();
+
+    sectionHeading(settingsPage, 'EINSTELLUNGEN');
+    appendLine(settingsPage, 'Gelten nur fuer dieses Geraet (im Browser gespeichert), wirken sofort.', {
+      fontSize: '13px',
+      opacity: '0.7',
+      marginBottom: '16px',
+    });
+
+    appendLine(settingsPage, 'Kamera-Tempo (Schwenken, Drehen, Neigen):', { marginBottom: '6px' });
+    const speedRow = document.createElement('div');
+    Object.assign(speedRow.style, {
+      display: 'flex',
+      gap: '10px',
+      marginBottom: '18px',
+    } satisfies Partial<CSSStyleDeclaration>);
+    for (const factor of CAMERA_SPEED_CHOICES) {
+      const button = textButton(`[ ${factor}x ]`);
+      if (factor === settings.cameraSpeed) button.style.background = 'rgba(51, 255, 51, 0.28)';
+      button.addEventListener('click', () => {
+        updateSettings({ cameraSpeed: factor });
+        renderSettings();
+      });
+      speedRow.appendChild(button);
+    }
+    settingsPage.appendChild(speedRow);
+
+    function toggleRow(label: string, value: boolean, onToggle: () => void): void {
+      const button = textButton(`[${value ? 'x' : ' '}] ${label}`);
+      Object.assign(button.style, {
+        display: 'block',
+        marginBottom: '12px',
+        textAlign: 'left',
+      } satisfies Partial<CSSStyleDeclaration>);
+      button.addEventListener('click', () => {
+        onToggle();
+        renderSettings();
+      });
+      settingsPage.appendChild(button);
+    }
+
+    toggleRow('Mausrad-Zoom umkehren', settings.invertZoom, () =>
+      updateSettings({ invertZoom: !getSettings().invertZoom }),
+    );
+    toggleRow('Waelder & Felsen anzeigen (aus = weniger GPU-Last)', settings.showDecoration, () =>
+      updateSettings({ showDecoration: !getSettings().showDecoration }),
+    );
+  }
+
+  function renderHelp(): void {
+    // Statischer Inhalt - einmal bauen reicht.
+    if (helpPage.childElementCount > 0) return;
+
+    const paragraph = { marginBottom: '14px' } satisfies Partial<CSSStyleDeclaration>;
+
+    sectionHeading(helpPage, 'STEUERUNG (MAUS/TOUCH)');
+    appendLine(helpPage, 'Klick auf eigene Einheit: auswaehlen. Klick auf den Boden: Auswahl dorthin bewegen.');
+    appendLine(helpPage, 'Klick auf Feind oder feindliches/neutrales Gebaeude: angreifen.');
+    appendLine(helpPage, 'Ziehen: Kamera schwenken. Mausrad / Zwei-Finger-Pinch: zoomen.');
+    appendLine(helpPage, 'Minimap anklicken/ziehen: Kamera dorthin zentrieren.');
+    appendLine(helpPage, 'Nur Infanterie ausgewaehlt + Klick auf eigenes Boot/Flugzeug: einsteigen.', paragraph);
+
+    sectionHeading(helpPage, 'STEUERUNG (TASTATUR)');
+    appendLine(helpPage, 'WASD: Kamera schwenken. Q/E: drehen. R/F: neigen. Escape: Fenster schliessen.', paragraph);
+
+    sectionHeading(helpPage, 'SPIELABLAUF');
+    appendLine(helpPage, 'Mission waehlen und Ziel im Briefing lesen - "objective" im Terminal zeigt den Fortschritt.');
+    appendLine(helpPage, 'Gebaeude einnehmen: Infanterie danebenstellen (dauert ein paar Sekunden; steht auch Feind-Infanterie daneben, pausiert die Einnahme).');
+    appendLine(helpPage, 'Wirtschaft: Staedte und HQ liefern laufend Credits, Minen liefern Material.');
+    appendLine(helpPage, 'Produktion (kostet Ressourcen): Kaserne baut Infanterie, Fabrik Panzer, Hafen Boote, Flugplatz Flugzeuge.');
+    appendLine(helpPage, 'Radar: HQ und eigener Flugplatz melden ferne Feinde als gelbe Blips auf der Minimap.');
+    appendLine(helpPage, 'Vorsicht: Wachtuerme an der Feindbasis schiessen auf alles in Reichweite.', paragraph);
+
+    sectionHeading(helpPage, 'TERMINAL-BEFEHLE (">_"-BUTTON AM LINKEN RAND)');
+    // Zwei Spalten statt padEnd-Leerzeichen: mit white-space:pre wuerden
+    // lange Beschreibungen rechts abgeschnitten, so bricht nur die
+    // Beschreibungs-Spalte um und die Befehlsnamen bleiben buendig.
+    const commands = listCommands();
+    const nameWidth = Math.max(...commands.map((command) => command.name.length));
+    for (const command of commands) {
+      const row = document.createElement('div');
+      Object.assign(row.style, {
+        display: 'flex',
+        gap: '12px',
+        fontSize: '14px',
+        marginBottom: '2px',
+      } satisfies Partial<CSSStyleDeclaration>);
+      const name = document.createElement('span');
+      name.textContent = command.name;
+      Object.assign(name.style, {
+        flex: 'none',
+        width: `${nameWidth}ch`,
+      } satisfies Partial<CSSStyleDeclaration>);
+      const description = document.createElement('span');
+      description.textContent = command.description;
+      description.style.flex = '1';
+      row.appendChild(name);
+      row.appendChild(description);
+      helpPage.appendChild(row);
+    }
+  }
+
   function refresh(): void {
     // Nach einem Sieg auf die naechste freigeschaltete Mission springen -
     // manuell ausgewaehlte (auch gewonnene) Missionen bleiben sonst stehen.
@@ -367,6 +552,10 @@ export function createStartScreen(parent: HTMLElement, onStartMission: (missionI
     } else {
       statusLine.style.display = 'none';
     }
+    // Immer auf der Missionsseite oeffnen - besonders nach missionEnd soll
+    // die naechste Mission direkt sichtbar sein, egal welcher Tab zuletzt
+    // offen war.
+    showPage('missions');
     refresh();
     root.style.display = 'flex';
   }
@@ -393,6 +582,7 @@ export function createStartScreen(parent: HTMLElement, onStartMission: (missionI
     if (event.target === root) close();
   });
 
+  showPage('missions');
   refresh();
   return { open, close, toggle, isOpen, refresh };
 }

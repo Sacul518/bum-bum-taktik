@@ -24,6 +24,7 @@ import { createDecoration, disposeDecoration } from './render/deco.js';
 import { createMinimap } from './ui/minimap.js';
 import { createResourceHud } from './ui/resources.js';
 import { createStartScreen } from './ui/startscreen.js';
+import { getSettings, onSettingsChange } from './ui/settings.js';
 import { connectToServer } from './net/client.js';
 import { resolveCameraInput } from './input/hotkeys.js';
 import { createTerminal } from './terminal/Terminal.js';
@@ -123,6 +124,12 @@ function printGameEvent(event: GameEvent): void {
 const minimap = createMinimap(document.body, (x, z) => centerCameraOn(cameraRig, x, z));
 const resourceHud = createResourceHud(document.body);
 let fogOverlay: FogOverlay | null = null;
+
+// Deko-Schalter der Settings-Seite wirkt sofort auf die aktuelle Karte -
+// Kamera-Tempo/Zoomrichtung lesen ihre Werte direkt bei jeder Eingabe.
+onSettingsChange((settings) => {
+  if (decoGroup) decoGroup.visible = settings.showDecoration;
+});
 
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -268,6 +275,7 @@ const connection = connectToServer(`ws://${window.location.hostname}:${DEFAULT_S
       // (Freihalte-Zonen) aus dem ersten StateUpdate bekannt sind.
       if (!decoGroup && terrainTypesRef && terrainElevation) {
         decoGroup = createDecoration(mapWidth, mapHeight, terrainTypesRef, terrainElevation, message.buildings);
+        decoGroup.visible = getSettings().showDecoration;
         scene.add(decoGroup);
       }
 
@@ -417,7 +425,8 @@ renderer.domElement.addEventListener(
   'wheel',
   (event) => {
     event.preventDefault();
-    zoomCamera(cameraRig, Math.exp(event.deltaY * WHEEL_ZOOM_SPEED));
+    const zoomDirection = getSettings().invertZoom ? -1 : 1;
+    zoomCamera(cameraRig, Math.exp(event.deltaY * WHEEL_ZOOM_SPEED * zoomDirection));
   },
   { passive: false },
 );
@@ -690,11 +699,12 @@ function render(): void {
   // Weltachsen - sonst liefe "vorwaerts" nach einer Drehung schraeg statt
   // geradeaus auf dem Bildschirm.
   const cameraInput = resolveCameraInput(pressedKeys);
+  const cameraSpeedFactor = getSettings().cameraSpeed;
   if (cameraInput.panForward !== 0 || cameraInput.panRight !== 0) {
     const { forward, right } = getGroundAxes(cameraRig);
     const length = Math.hypot(cameraInput.panForward, cameraInput.panRight);
-    const stepForward = (cameraInput.panForward / length) * CAMERA_PAN_SPEED * deltaSeconds;
-    const stepRight = (cameraInput.panRight / length) * CAMERA_PAN_SPEED * deltaSeconds;
+    const stepForward = (cameraInput.panForward / length) * CAMERA_PAN_SPEED * cameraSpeedFactor * deltaSeconds;
+    const stepRight = (cameraInput.panRight / length) * CAMERA_PAN_SPEED * cameraSpeedFactor * deltaSeconds;
     panCamera(
       cameraRig,
       forward.x * stepForward + right.x * stepRight,
@@ -702,8 +712,8 @@ function render(): void {
     );
   }
 
-  if (cameraInput.rotate !== 0) rotateCamera(cameraRig, cameraInput.rotate * CAMERA_ROTATE_SPEED * deltaSeconds);
-  if (cameraInput.tilt !== 0) tiltCamera(cameraRig, cameraInput.tilt * CAMERA_TILT_SPEED * deltaSeconds);
+  if (cameraInput.rotate !== 0) rotateCamera(cameraRig, cameraInput.rotate * CAMERA_ROTATE_SPEED * cameraSpeedFactor * deltaSeconds);
+  if (cameraInput.tilt !== 0) tiltCamera(cameraRig, cameraInput.tilt * CAMERA_TILT_SPEED * cameraSpeedFactor * deltaSeconds);
 
   // Kamera-Ausschnitt auf der Minimap nachfuehren - setViewport() zeichnet
   // nur neu, wenn sich die Kamera tatsaechlich bewegt hat.

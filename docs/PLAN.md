@@ -126,7 +126,13 @@ weil Minen-Einkommen und Produktionsgebäude sie brauchen). Details in
   Dabei Bug gefixt: das Terminal-Fenster startete default-sichtbar
   (`display: flex` in Terminal.ts), das bisherige `terminal.open()` beim
   Start war wirkungslos — startet jetzt mit `display: none`.*
-- [ ] Settings-Seite, Hilfe-Seite.
+- [x] Settings-Seite, Hilfe-Seite. *Erledigt 2026-07-20: als Tabs im
+  Startscreen-Overlay (MISSIONEN | EINSTELLUNGEN | HILFE). Einstellungen in
+  `ui/settings.ts` (localStorage, pro Geraet): Kamera-Tempo 0.5x-2x,
+  Mausrad-Zoom umkehren, Waelder/Felsen an/aus (GPU-Last, wirkt sofort auf
+  die decoGroup). Hilfe: Steuerung Maus/Touch/Tastatur, Spielablauf-
+  Kurzregeln, Terminal-Befehlsliste aus der Registry (zweispaltig mit
+  Umbruch).*
 - [ ] Tutorial: die erste Mission als geführte Einführung.
 - [ ] Mehrere Spielstände: serverseitige Persistenz (z. B. JSON-Datei pro
   Spielstand auf dem Pi) für Kampagnen-Fortschritt.
